@@ -47,9 +47,15 @@ public class CharacterActuator : MonoBehaviour
         foreach (var cmd in commands)
         {
             if (cmd == null) continue;
+            if (!isExecuting) yield break;
 
-            if (actionDisplay != null)
-                actionDisplay.text = $"执行: {cmd.op}";
+            // ==================== 极致安全写法 ====================
+            try
+            {
+                if (actionDisplay != null)
+                    actionDisplay.text = $"正在执行: {cmd.op}";
+            }
+            catch { }
 
             switch (cmd.op.ToUpper())
             {
@@ -58,24 +64,55 @@ public class CharacterActuator : MonoBehaviour
                     break;
 
                 case "GRAB":
-                    yield return StartCoroutine(PerformGrab(cmd.target_id));
+                    if (grabbedObject == null)
+                    {
+                        rb.linearVelocity = Vector3.zero;
+                        yield return new WaitForSeconds(0.1f);
+
+                        GameObject target = GameObject.Find(cmd.target_id);
+                        if (target != null && Vector3.Distance(transform.position, target.transform.position) <= 3.5f)
+                        {
+                            grabbedObject = target;
+                            var targetRb = grabbedObject.GetComponent<Rigidbody>();
+                            if (targetRb) targetRb.isKinematic = true;
+
+                            grabbedObject.transform.SetParent(transform);
+                            grabbedObject.transform.localPosition = new Vector3(0, 0.8f, 1.0f);
+                            grabbedObject.transform.localRotation = Quaternion.identity;
+
+                            Debug.Log($"<color=cyan>[物理原语] 成功抓取物体: {cmd.target_id}</color>");
+                        }
+                    }
+                    yield return new WaitForSeconds(0.3f);
                     break;
 
                 case "RELEASE":
-                    PerformRelease();
+                    if (grabbedObject != null)
+                    {
+                        var targetRb = grabbedObject.GetComponent<Rigidbody>();
+                        if (targetRb) targetRb.isKinematic = false;
+                        grabbedObject.transform.SetParent(null);
+                        Debug.Log($"<color=cyan>[物理原语] 松开了物体: {grabbedObject.name}</color>");
+                        grabbedObject = null;
+                    }
+                    yield return new WaitForSeconds(0.2f);
                     break;
 
                 case "USE_ITEM":
                     TriggerUseLogic();
+                    yield return new WaitForSeconds(0.4f);
                     break;
             }
 
-            // 小缓冲，避免动作太快
-            yield return new WaitForSeconds(0.15f);
+            StabilizeMovement();
         }
 
-        if (actionDisplay != null)
-            actionDisplay.text = "序列执行完毕";
+        try
+        {
+            if (actionDisplay != null)
+                actionDisplay.text = "原子序列执行完毕";
+        }
+        catch { }
 
         isExecuting = false;
     }
