@@ -88,34 +88,42 @@ public class AIBrainController : MonoBehaviour
         yield break;
     }
 
-    private void OnAIResponseReceived(string aiRawText)
+    // AIBrainController.cs 内部的方法修改
+    private void OnAIResponseReceived(string rawResponse)
     {
         Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 📥 收到AI回复");
 
-        AIPhysicsDecision decision = ParseBrainResponse(aiRawText);
+        AIPhysicsDecision decision = ParseBrainResponse(rawResponse);
         if (decision == null)
         {
+            Debug.LogError($"[{GetCurrentTimestamp()}] [大脑] ❌ JSON 反序列化失败！原始数据: {rawResponse}");
             isThinking = false;
             return;
         }
 
-        // 更新Goal（核心）
-        if (!string.IsNullOrEmpty(decision.goal))
-        {
-            currentGoal = decision.goal;
-            if (smallBrain != null)
-                smallBrain.SetNewGoal(decision.goal, decision.goal_target_id);
-        }
+        // 1. 处理大脑即时动作（例如当下的物理微调、闪避力、内心独白显示）
+        if (monologueDisplay != null)
+            monologueDisplay.text = decision.monologue;
 
-        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 🎯 决策新目标 → 【{decision.goal}】");
-
-        // 执行短期原子动作
         if (decision.primitive_commands != null && decision.primitive_commands.Count > 0)
         {
-            actuator.ExecutePrimitiveSequence(decision.primitive_commands, actionDisplay);
+            if (actuator != null)
+            {
+                actuator.ExecutePrimitiveSequence(decision.primitive_commands, actionDisplay);
+            }
         }
 
-        if (monologueDisplay) monologueDisplay.text = decision.monologue;
+        // 2. 核心架构对齐：解耦硬编码，把战略目标和托管原语通通打包给小脑
+        currentGoal = string.IsNullOrEmpty(decision.goal) ? "无" : decision.goal;
+
+        if (smallBrain != null)
+        {
+            // 🌟 核心点：将目标描述、目标ID、以及大脑托管的“临门一脚动作”一起传给小脑
+            // 注意：这里需要确保你的 LocalMotorController.SetNewGoal 方法签名已修改为接收这三个参数
+            smallBrain.SetNewGoal(currentGoal, decision.goal_target_id, decision.goal_arrival_command);
+        }
+
+        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 🎯 决策新目标 → 【{currentGoal}】 | 托管动作: {(decision.goal_arrival_command != null ? decision.goal_arrival_command.op : "无")}");
         isThinking = false;
     }
 
@@ -152,16 +160,22 @@ public class AIBrainController : MonoBehaviour
         if (!isThinking) OnPhysicsBrainTick();
     }
 
-    // 添加到 AIBrainController 类末尾
     public void InterruptAndClearGoal()
     {
         currentGoal = "无";
+
+        // 🌟 加强健壮性：先检查小脑组件是否存在，再进行清理
         if (smallBrain != null)
+        {
             smallBrain.InterruptAndClearGoal();
+        }
 
         if (actuator != null)
+        {
             actuator.StopAllPhysicalMovement();
+        }
 
-        Debug.Log("<color=red>[大脑] 已重置所有Goal和动作（Simulation Reset）</color>");
+        isThinking = false;
+        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] ⚠️ 外部重置信号触发：已强制中断当前思考并格式化所有战略意图。");
     }
 }

@@ -8,7 +8,7 @@ public class LocalMotorController : MonoBehaviour
 {
     [Header("小脑参数")]
     public float tickInterval = 0.2f;
-    public float approachDistance = 2.5f;
+    public float approachDistance = 1.5f; // 缩短点，让物理原语更准
 
     private CharacterActuator actuator;
     private PerceptionRadar radar;
@@ -16,6 +16,7 @@ public class LocalMotorController : MonoBehaviour
 
     private string currentGoal = "无";
     private string currentGoalTargetId = "";
+    private PrimitiveCommand arrivalCommand = null; // 🌟 托管的大脑最终动作
 
     private float lastTickTime = 0f;
 
@@ -34,146 +35,82 @@ public class LocalMotorController : MonoBehaviour
         TickSmallBrain();
     }
 
-    public void SetNewGoal(string goalDescription, string targetId = "")
+    // 🌟 大脑下发任务时，连带到达动作一起托管
+    public void SetNewGoal(string goalDescription, string targetId, PrimitiveCommand onArrivalCmd)
     {
         currentGoal = goalDescription;
         currentGoalTargetId = targetId;
+        arrivalCommand = onArrivalCmd;
 
-        if (!string.IsNullOrEmpty(targetId))
-        {
-            Debug.Log($"<color=orange>[小脑] 🎯 收到新目标: 【{goalDescription}】 | 目标对象ID: {targetId}</color>");
-        }
-        else
-        {
-            Debug.Log($"<color=orange>[小脑] 🎯 收到新目标: 【{goalDescription}】</color>");
-        }
+        Debug.Log($"<color=orange>[小脑] 🎯 接受托管目标: 【{goalDescription}】 | 目标物体: {targetId} | 到达后动作: {(onArrivalCmd != null ? onArrivalCmd.op : "无")}</color>");
     }
 
     private void TickSmallBrain()
     {
-        if (string.IsNullOrEmpty(currentGoal) || currentGoal == "无") return;
+        // 如果没有明确的目标物体 ID，小脑不瞎跑，保持物理静止或听从大脑即时指令
+        if (string.IsNullOrEmpty(currentGoalTargetId)) return;
 
-        // 新增：检查目标是否已经完成
-        if (IsGoalAlreadyAchieved())
+        // 纯粹通过唯一 ID 查找场景中的目标实体（完全不关心它的类型是狼还是水果）
+        GameObject targetObj = GameObject.Find(currentGoalTargetId);
+        if (targetObj == null) return;
+
+        float dist = Vector3.Distance(transform.position, targetObj.transform.position);
+
+        // 状况 A：还没走到 —— 高频、丝滑地施加物理力（物理原语驱动）
+        if (dist > approachDistance)
         {
-            Debug.Log($"<color=green>[小脑] ✨ 目标已达成: 【{currentGoal}】</color>");
+            MoveTowardsTarget(targetObj.transform.position);
+        }
+        // 状况 B：到了！—— 释放战略意图（临门一脚）
+        else
+        {
+            Debug.Log($"<color=green>[小脑] ✨ 已顺利护送肉身抵达目标 【{currentGoalTargetId}】 周边 {dist:F2} 米处！</color>");
+
+            // 执行大脑托付的临门一脚动作
+            if (arrivalCommand != null && !string.IsNullOrEmpty(arrivalCommand.op))
+            {
+                Debug.Log($"<color=yellow>[小脑] ⚡ 正在代为释放大脑托管的原语动作: {arrivalCommand.op}</color>");
+                List<PrimitiveCommand> cmds = new List<PrimitiveCommand> { arrivalCommand };
+                actuator.ExecutePrimitiveSequence(cmds, null);
+            }
+
+            // 功成身退，清空目标，并立刻叫醒大脑进行下一轮战术推演
             currentGoal = "无";
             currentGoalTargetId = "";
-            return;
-        }
+            arrivalCommand = null;
 
-        SemanticObject targetObj = FindBestTargetForGoal();
-
-        if (targetObj != null)
-        {
-            float distance = Vector3.Distance(transform.position, targetObj.transform.position);
-
-            if (distance > approachDistance)
+            if (brain != null)
             {
-                MoveTowardsTarget(targetObj.transform.position);
-            }
-            else
-            {
-                AutoInteract(targetObj);
+                brain.RequestImmediateThink();
             }
         }
-        else if (brain != null)
-        {
-            brain.RequestImmediateThink();
-        }
-    }
-
-    // 新增：判断当前Goal是否已完成（语义化）
-    private bool IsGoalAlreadyAchieved()
-    {
-        if (actuator == null || actuator.CurrentGrabbedObject == null) return false;
-
-        string heldName = actuator.CurrentGrabbedObject.name.ToLower();
-        string goalLower = currentGoal.ToLower();
-
-        if (goalLower.Contains("weapon") || goalLower.Contains("stick"))
-            return heldName.Contains("stick");
-
-        if (goalLower.Contains("food") || goalLower.Contains("fruit"))
-            return heldName.Contains("fruit");
-
-        return false;
-    }
-
-    private SemanticObject FindBestTargetForGoal()
-    {
-        // 如果已经持有目标，就不需要再找
-        if (IsGoalAlreadyAchieved()) return null;
-
-        SemanticObject[] allObjs = FindObjectsOfType<SemanticObject>();
-        SemanticObject best = null;
-        float minDist = float.MaxValue;
-
-        foreach (var obj in allObjs)
-        {
-            if (obj == null || obj.gameObject == this.gameObject) continue;
-
-            float dist = Vector3.Distance(transform.position, obj.transform.position);
-            if (dist < minDist && IsRelevantToGoal(currentGoal, obj))
-            {
-                minDist = dist;
-                best = obj;
-            }
-        }
-        return best;
-    }
-
-    private bool IsRelevantToGoal(string goal, SemanticObject obj)
-    {
-        if (string.IsNullOrEmpty(goal)) return false;
-        string g = goal.ToLower();
-        string typeStr = obj.semanticType.ToString().ToLower();
-
-        if (g.Contains("weapon") || g.Contains("stick") || g.Contains("木棍"))
-            return typeStr.Contains("weapon");
-
-        if (g.Contains("food") || g.Contains("fruit") || g.Contains("吃"))
-            return typeStr.Contains("food");
-
-        if (g.Contains("enemy") || g.Contains("wolf"))
-            return typeStr.Contains("enemy");
-
-        return !string.IsNullOrEmpty(currentGoalTargetId) &&
-               obj.gameObject.name.Contains(currentGoalTargetId);
     }
 
     private void MoveTowardsTarget(Vector3 targetPos)
     {
         Vector3 dir = (targetPos - transform.position).normalized;
+
+        // 纯物理驱动：小脑只管计算朝向目标的力
         var commands = new List<PrimitiveCommand>
         {
-            new PrimitiveCommand { op = "APPLY_FORCE", arg_x = dir.x * 3.2f, arg_z = dir.z * 3.2f }
+            new PrimitiveCommand { op = "APPLY_FORCE", arg_x = dir.x * 3.5f, arg_z = dir.z * 3.5f }
         };
 
         actuator.ExecutePrimitiveSequence(commands, null);
-    }
-
-    private void AutoInteract(SemanticObject target)
-    {
-        List<PrimitiveCommand> commands = new List<PrimitiveCommand>();
-
-        if (target.semanticType == SemanticType.Weapon)
-        {
-            commands.Add(new PrimitiveCommand { op = "GRAB", target_id = target.gameObject.name });
-        }
-        else if (target.semanticType == SemanticType.Food)
-        {
-            commands.Add(new PrimitiveCommand { op = "USE_ITEM" });
-        }
-
-        if (commands.Count > 0)
-            actuator.ExecutePrimitiveSequence(commands, null);
     }
 
     public void InterruptAndClearGoal()
     {
         currentGoal = "无";
         currentGoalTargetId = "";
-        if (actuator) actuator.StopAllPhysicalMovement();
+        arrivalCommand = null; // 清空托管的临门一脚动作
+
+        // 让物理执行器也立刻刹车停止移动
+        if (actuator != null)
+        {
+            actuator.StopAllPhysicalMovement();
+        }
+
+        Debug.Log("<color=red>[小脑] 🛑 收到中断指令，已强行清空当前导航战略与托管动作！</color>");
     }
 }

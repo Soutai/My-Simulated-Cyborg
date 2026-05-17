@@ -60,4 +60,29 @@ public class PerceptionRadar : MonoBehaviour
         sb.Append("\n]");
         return sb.ToString();
     }
+
+    // 🌟 将这段代码粘贴到 PerceptionRadar.cs 的最底部 🌟
+    private void OnDrawGizmos()
+    {
+        // 设置 Gizmos 颜色为半透明黄色
+        Gizmos.color = new Color(1f, 0.92f, 0.016f, 0.15f);
+
+        // 1. 画出一个基础的立体线框球体（表现感知范围）
+        Gizmos.DrawWireSphere(transform.position, perceptionRadius);
+
+        // 2. 🌟 还原你记忆中的“三个坐标轴黄圈”的硬核层次感
+#if UNITY_EDITOR
+        // 稍微加深线框颜色使其更清晰
+        UnityEditor.Handles.color = new Color(1f, 0.85f, 0f, 0.6f);
+
+        // XZ 平面 (水平面圈)
+        UnityEditor.Handles.DrawWireDisc(transform.position, Vector3.up, perceptionRadius);
+
+        // XY 平面 (垂直前后圈)
+        UnityEditor.Handles.DrawWireDisc(transform.position, Vector3.forward, perceptionRadius);
+
+        // YZ 平面 (垂直左右圈)
+        UnityEditor.Handles.DrawWireDisc(transform.position, Vector3.right, perceptionRadius);
+#endif
+    }
 }

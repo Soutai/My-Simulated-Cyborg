@@ -18,11 +18,10 @@ namespace EmbodiedAI.DTO
     public class AIPhysicsDecision
     {
         public string monologue;
-        public List<PrimitiveCommand> primitive_commands;
-
-        // 新增：Goal 支持
-        public string goal;                    // LLM输出的当前/新目标描述
-        public string goal_target_id;          // 可选：指定目标ID
+        public List<PrimitiveCommand> primitive_commands; // 立即执行的指令（比如转身、当下的闪避）
+        public string goal;                    // 目标描述，如 "获取最近的武器"
+        public string goal_target_id;          // 目标物体唯一ID，如 "Stick"
+        public PrimitiveCommand goal_arrival_command; // 🌟 核心：到达目标附近后，小脑代为触发的物理原语！
     }
 
     // Google API 规范需要的底层请求/响应外壳
