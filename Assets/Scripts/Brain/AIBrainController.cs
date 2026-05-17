@@ -49,7 +49,7 @@ public class AIBrainController : MonoBehaviour
 
         isThinking = true;
 
-        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 🚀 开始思考... 当前Goal: {currentGoal}");
+        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 🧠 开始决策... 当前目标: 【{currentGoal}】");
 
         // ==================== 关键修复：强制获取组件 ====================
         if (attributes == null) attributes = GetComponent<NPCAttributes>();
@@ -107,7 +107,7 @@ public class AIBrainController : MonoBehaviour
                 smallBrain.SetNewGoal(decision.goal, decision.goal_target_id);
         }
 
-        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 🎯 新Goal → {currentGoal}");
+        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 🎯 决策新目标 → 【{decision.goal}】");
 
         // 执行短期原子动作
         if (decision.primitive_commands != null && decision.primitive_commands.Count > 0)

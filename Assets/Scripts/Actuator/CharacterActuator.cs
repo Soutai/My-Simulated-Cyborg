@@ -46,10 +46,14 @@ public class CharacterActuator : MonoBehaviour
 
         foreach (var cmd in commands)
         {
-            if (cmd == null) continue;
+            // 1. 极致安全防线：同时过滤 cmd 为空 以及 cmd.op 为空的情况
+            if (cmd == null || string.IsNullOrEmpty(cmd.op))
+            {
+                Debug.LogWarning("[物理原语] 过滤掉了一个空的命令或无效的操作名(op 为空)。");
+                continue;
+            }
             if (!isExecuting) yield break;
 
-            // ==================== 极致安全写法 ====================
             try
             {
                 if (actionDisplay != null)
@@ -57,7 +61,10 @@ public class CharacterActuator : MonoBehaviour
             }
             catch { }
 
-            switch (cmd.op.ToUpper())
+            // 2. 转换为大写时使用安全机制
+            string opType = cmd.op.ToUpper().Trim();
+
+            switch (opType)
             {
                 case "APPLY_FORCE":
                     yield return StartCoroutine(ApplyForceSafe(cmd.arg_x, cmd.arg_z));
@@ -69,18 +76,22 @@ public class CharacterActuator : MonoBehaviour
                         rb.linearVelocity = Vector3.zero;
                         yield return new WaitForSeconds(0.1f);
 
-                        GameObject target = GameObject.Find(cmd.target_id);
-                        if (target != null && Vector3.Distance(transform.position, target.transform.position) <= 3.5f)
+                        // 这里的 cmd.target_id 最好也加个空检查，防止 Find 报错
+                        if (!string.IsNullOrEmpty(cmd.target_id))
                         {
-                            grabbedObject = target;
-                            var targetRb = grabbedObject.GetComponent<Rigidbody>();
-                            if (targetRb) targetRb.isKinematic = true;
+                            GameObject target = GameObject.Find(cmd.target_id);
+                            if (target != null && Vector3.Distance(transform.position, target.transform.position) <= 3.5f)
+                            {
+                                grabbedObject = target;
+                                var targetRb = grabbedObject.GetComponent<Rigidbody>();
+                                if (targetRb) targetRb.isKinematic = true;
 
-                            grabbedObject.transform.SetParent(transform);
-                            grabbedObject.transform.localPosition = new Vector3(0, 0.8f, 1.0f);
-                            grabbedObject.transform.localRotation = Quaternion.identity;
+                                grabbedObject.transform.SetParent(transform);
+                                grabbedObject.transform.localPosition = new Vector3(0, 0.8f, 1.0f);
+                                grabbedObject.transform.localRotation = Quaternion.identity;
 
-                            Debug.Log($"<color=cyan>[物理原语] 成功抓取物体: {cmd.target_id}</color>");
+                                Debug.Log($"<color=cyan>[物理原语] 成功抓取物体: {cmd.target_id}</color>");
+                            }
                         }
                     }
                     yield return new WaitForSeconds(0.3f);
@@ -101,6 +112,10 @@ public class CharacterActuator : MonoBehaviour
                 case "USE_ITEM":
                     TriggerUseLogic();
                     yield return new WaitForSeconds(0.4f);
+                    break;
+
+                default:
+                    Debug.LogWarning($"[物理原语] 未知的操作命令: {opType}");
                     break;
             }
 

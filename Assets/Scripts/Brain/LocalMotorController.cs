@@ -38,7 +38,15 @@ public class LocalMotorController : MonoBehaviour
     {
         currentGoal = goalDescription;
         currentGoalTargetId = targetId;
-        Debug.Log($"<color=orange>[小脑] 收到新Goal: {goalDescription} (目标ID: {targetId})</color>");
+
+        if (!string.IsNullOrEmpty(targetId))
+        {
+            Debug.Log($"<color=orange>[小脑] 🎯 收到新目标: 【{goalDescription}】 | 目标对象ID: {targetId}</color>");
+        }
+        else
+        {
+            Debug.Log($"<color=orange>[小脑] 🎯 收到新目标: 【{goalDescription}】</color>");
+        }
     }
 
     private void TickSmallBrain()
@@ -48,7 +56,7 @@ public class LocalMotorController : MonoBehaviour
         // 新增：检查目标是否已经完成
         if (IsGoalAlreadyAchieved())
         {
-            Debug.Log($"<color=green>[小脑] Goal 已完成: {currentGoal}</color>");
+            Debug.Log($"<color=green>[小脑] ✨ 目标已达成: 【{currentGoal}】</color>");
             currentGoal = "无";
             currentGoalTargetId = "";
             return;
