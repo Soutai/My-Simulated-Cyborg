@@ -3,53 +3,38 @@ using System.Collections;
 using System.Collections.Generic;
 using EmbodiedAI.DTO;
 
-[RequireComponent(typeof(NPCAttributes))]
-[RequireComponent(typeof(PerceptionRadar))]
-[RequireComponent(typeof(PromptManager))]
-[RequireComponent(typeof(GeminiHttpClient))]
-[RequireComponent(typeof(CharacterActuator))]
 public class AIBrainController : MonoBehaviour
 {
-    [Header("UI 绑定")]
+    [Header("组件")]
+    public NPCAttributes attributes;
+    public PerceptionRadar radar;
+    public PromptManager promptManager;
+    public GeminiHttpClient httpClient;
+    public CharacterActuator actuator;
+    public LocalMotorController smallBrain;   // 新增
+
+    [Header("UI")]
     public UnityEngine.UI.Text monologueDisplay;
     public UnityEngine.UI.Text actionDisplay;
 
-    private NPCAttributes attributes;
-    private PerceptionRadar radar;
-    private PromptManager promptManager;
-    private GeminiHttpClient httpClient;
-    private CharacterActuator actuator;
-
     private bool isThinking = false;
-
-    void Awake()
-    {
-        attributes = GetComponent<NPCAttributes>();
-        radar = GetComponent<PerceptionRadar>();
-        promptManager = GetComponent<PromptManager>();
-        httpClient = GetComponent<GeminiHttpClient>();
-        actuator = GetComponent<CharacterActuator>();
-    }
+    private string currentGoal = "无";
 
     void Start()
     {
         if (TimeManager.Instance != null)
-        {
-            // 改用新的20秒AI事件
             TimeManager.Instance.OnAITick += OnPhysicsBrainTick;
-        }
 
         StartCoroutine(DelayedFirstTick());
     }
 
-    // 🌟 追加这个小辅助协程，给物理环境、外部 Key 的 IO 读取留出绝对安全的就绪时间
     private IEnumerator DelayedFirstTick()
     {
-        yield return new WaitForSeconds(0.2f);
+        yield return new WaitForSeconds(1f);
         OnPhysicsBrainTick();
     }
 
-    private void OnPhysicsBrainTick()
+    public void OnPhysicsBrainTick()
     {
         if (isThinking) return;
         StartCoroutine(ThinkPhysicsRoutine());
@@ -59,114 +44,124 @@ public class AIBrainController : MonoBehaviour
     {
         if (isThinking)
         {
-            Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 正在思考中，跳过本次触发");
             yield break;
         }
 
         isThinking = true;
 
-        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 🚀 开始新一轮思考...");
+        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 🚀 开始思考... 当前Goal: {currentGoal}");
 
-        string timeStr = TimeManager.Instance != null ? TimeManager.Instance.GetCurrentTimeString() : "00:00";
-        string serializedRadarData = radar.ScanEnvironmentToSemanticJson();
-        string heldItemName = "无（手里没有任何武器或道具，手无寸铁）";
-        if (actuator != null && actuator.CurrentGrabbedObject != null)
+        // ==================== 关键修复：强制获取组件 ====================
+        if (attributes == null) attributes = GetComponent<NPCAttributes>();
+        if (radar == null) radar = GetComponent<PerceptionRadar>();
+        if (promptManager == null) promptManager = GetComponent<PromptManager>();
+        if (httpClient == null) httpClient = GetComponent<GeminiHttpClient>();
+        if (actuator == null) actuator = GetComponent<CharacterActuator>();
+        if (smallBrain == null) smallBrain = GetComponent<LocalMotorController>();
+
+        // 再次检查关键组件
+        if (promptManager == null || radar == null || attributes == null || httpClient == null)
         {
-            heldItemName = actuator.CurrentGrabbedObject.name;
+            Debug.LogError($"[大脑] 严重错误：核心组件仍然为空！当前组件状态： Prompt={promptManager}, Radar={radar}, Attributes={attributes}");
+            isThinking = false;
+            yield break;
         }
 
+        string timeStr = TimeManager.Instance?.GetCurrentTimeString() ?? "08:00";
+        string radarData = radar.ScanEnvironmentToSemanticJson();
+        string held = (actuator != null && actuator.CurrentGrabbedObject != null)
+                      ? actuator.CurrentGrabbedObject.name
+                      : "手无寸铁";
+
         string fullPrompt = promptManager.GeneratePhysicsEnginePrompt(
-            attributes.satiety, attributes.personality, timeStr, serializedRadarData, heldItemName);
+            attributes.satiety,
+            attributes.personality,
+            timeStr,
+            radarData,
+            held,
+            currentGoal ?? "无");
 
-        // ==================== 新增：打印完整 Prompt ====================
-        Debug.Log($"<color=yellow>[{GetCurrentTimestamp()}] [大脑] 📤【发送给AI的完整Prompt】</color>\n{fullPrompt}\n");
+        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 📤 发送Prompt给Gemini");
 
-        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 📤 发送Prompt给Gemini（等待AI回复）");
-
-        // 发送请求
-        httpClient.PostPrompt(fullPrompt, (aiRawText) =>
-        {
-            // ==================== 新增：打印AI原始回复 ====================
-            Debug.Log($"<color=cyan>[{GetCurrentTimestamp()}] [大脑] 📥【AI原始回复内容】</color>\n{aiRawText}\n");
-
-            AIPhysicsDecision npcDecision = ParseBrainResponse(aiRawText);
-            if (npcDecision != null)
-            {
-                Debug.Log($"[{GetCurrentTimestamp()}] [大脑] ✅ 解析成功，Monologue: {npcDecision.monologue}");
-
-                if (npcDecision.primitive_commands != null && npcDecision.primitive_commands.Count > 0)
-                {
-                    Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 🎯 解析到 {npcDecision.primitive_commands.Count} 个物理原语：");
-
-                    for (int i = 0; i < npcDecision.primitive_commands.Count; i++)
-                    {
-                        var cmd = npcDecision.primitive_commands[i];
-                        Debug.Log($"   [{i + 1}] op = {cmd.op} | target_id = {cmd.target_id} | arg_x = {cmd.arg_x} | arg_z = {cmd.arg_z}");
-                    }
-
-                    if (monologueDisplay) monologueDisplay.text = "AI物理直觉：" + npcDecision.monologue;
-                    actuator.ExecutePrimitiveSequence(npcDecision.primitive_commands, actionDisplay);
-                }
-                else
-                {
-                    Debug.LogWarning($"[{GetCurrentTimestamp()}] [大脑] ⚠️ 解析成功，但没有可执行的原语");
-                }
-            }
-            else
-            {
-                Debug.LogWarning($"[{GetCurrentTimestamp()}] [大脑] ⚠️ 无法解析AI回复");
-            }
-
-            isThinking = false;
-        },
-        () =>
-        {
-            Debug.LogWarning($"[{GetCurrentTimestamp()}] [大脑] ❌ 请求失败，解锁思考状态");
-            isThinking = false;
-        });
+        httpClient.PostPrompt(fullPrompt, OnAIResponseReceived, OnAIRequestFailed);
 
         yield break;
     }
 
-    // 专门负责业务逻辑解析的私有方法
-    private AIPhysicsDecision ParseBrainResponse(string aiRawText)
+    private void OnAIResponseReceived(string aiRawText)
     {
-        try
-        {
-            // 正则提取清洗完整的 JSON 块
-            System.Text.RegularExpressions.Match match = System.Text.RegularExpressions.Regex.Match(
-                aiRawText, @"{.*}", System.Text.RegularExpressions.RegexOptions.Singleline
-            );
+        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 📥 收到AI回复");
 
-            if (match.Success)
-            {
-                return JsonUtility.FromJson<AIPhysicsDecision>(match.Value);
-            }
-        }
-        catch (System.Exception e)
+        AIPhysicsDecision decision = ParseBrainResponse(aiRawText);
+        if (decision == null)
         {
-            Debug.LogError($"[大脑业务解析错误] 物理原语序列 JSON 反序列化破产: {e.Message}");
+            isThinking = false;
+            return;
+        }
+
+        // 更新Goal（核心）
+        if (!string.IsNullOrEmpty(decision.goal))
+        {
+            currentGoal = decision.goal;
+            if (smallBrain != null)
+                smallBrain.SetNewGoal(decision.goal, decision.goal_target_id);
+        }
+
+        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 🎯 新Goal → {currentGoal}");
+
+        // 执行短期原子动作
+        if (decision.primitive_commands != null && decision.primitive_commands.Count > 0)
+        {
+            actuator.ExecutePrimitiveSequence(decision.primitive_commands, actionDisplay);
+        }
+
+        if (monologueDisplay) monologueDisplay.text = decision.monologue;
+        isThinking = false;
+    }
+
+    private void OnAIRequestFailed()
+    {
+        Debug.LogWarning($"[{GetCurrentTimestamp()}] [大脑] ❌ 请求失败");
+        isThinking = false;
+    }
+
+    private AIPhysicsDecision ParseBrainResponse(string rawText)
+    {
+        // 提取JSON（保持你原来的正则或简单处理）
+        int start = rawText.IndexOf("{");
+        int end = rawText.LastIndexOf("}") + 1;
+        if (start >= 0 && end > start)
+        {
+            string json = rawText.Substring(start, end - start);
+            return JsonUtility.FromJson<AIPhysicsDecision>(json);
         }
         return null;
     }
 
-    public void ResetBrainState()
-    {
-        isThinking = false;
-        if (actuator) actuator.StopAllPhysicalMovement();
-    }
+    private string GetCurrentTimestamp() => System.DateTime.Now.ToString("HH:mm:ss");
 
     void OnDestroy()
     {
         if (TimeManager.Instance != null)
-        {
             TimeManager.Instance.OnAITick -= OnPhysicsBrainTick;
-        }
     }
 
-    // 新增辅助方法（放在类最后）
-    private string GetCurrentTimestamp()
+    // 供小脑调用
+    public void RequestImmediateThink()
     {
-        return System.DateTime.Now.ToString("HH:mm:ss.fff");
+        if (!isThinking) OnPhysicsBrainTick();
+    }
+
+    // 添加到 AIBrainController 类末尾
+    public void InterruptAndClearGoal()
+    {
+        currentGoal = "无";
+        if (smallBrain != null)
+            smallBrain.InterruptAndClearGoal();
+
+        if (actuator != null)
+            actuator.StopAllPhysicalMovement();
+
+        Debug.Log("<color=red>[大脑] 已重置所有Goal和动作（Simulation Reset）</color>");
     }
 }

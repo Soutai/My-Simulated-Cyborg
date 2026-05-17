@@ -20,7 +20,12 @@ public class SimulationManager : MonoBehaviour
         {
             if (npcCharacter.TryGetComponent<AIBrainController>(out var brain))
             {
-                brain.ResetBrainState();
+                // 重置大脑状态（兼容新大小脑系统）
+                if (brain != null)
+                {
+                    brain.InterruptAndClearGoal();           // 新增的方法
+                                                             // 如果还有其他需要重置的逻辑可以在这里加
+                }
             }
 
             if (npcCharacter.TryGetComponent<NPCAttributes>(out var attributes))

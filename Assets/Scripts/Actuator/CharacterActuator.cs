@@ -34,6 +34,8 @@ public class CharacterActuator : MonoBehaviour
 
     public void ExecutePrimitiveSequence(List<PrimitiveCommand> commands, UnityEngine.UI.Text actionDisplay)
     {
+        if (commands == null || commands.Count == 0) return;
+
         StopAllPhysicalMovement();
         StartCoroutine(SequenceRoutine(commands, actionDisplay));
     }
@@ -44,9 +46,10 @@ public class CharacterActuator : MonoBehaviour
 
         foreach (var cmd in commands)
         {
-            if (!isExecuting) yield break;
+            if (cmd == null) continue;
 
-            if (actionDisplay) actionDisplay.text = $"正在执行: {cmd.op}";
+            if (actionDisplay != null)
+                actionDisplay.text = $"执行: {cmd.op}";
 
             switch (cmd.op.ToUpper())
             {
@@ -55,50 +58,25 @@ public class CharacterActuator : MonoBehaviour
                     break;
 
                 case "GRAB":
-                    if (grabbedObject == null)
-                    {
-                        // 抓取前先刹车，防止高速抓取导致飞天
-                        rb.linearVelocity = Vector3.zero;
-                        yield return new WaitForSeconds(0.1f);
-
-                        GameObject target = GameObject.Find(cmd.target_id);
-                        if (target != null && Vector3.Distance(transform.position, target.transform.position) <= 2.5f)
-                        {
-                            grabbedObject = target;
-                            var targetRb = grabbedObject.GetComponent<Rigidbody>();
-                            if (targetRb) targetRb.isKinematic = true;
-
-                            grabbedObject.transform.SetParent(this.transform);
-                            grabbedObject.transform.localPosition = new Vector3(0, 0.6f, 0.9f);
-                            Debug.Log($"<color=cyan>[物理原语] 成功抓取物体: {cmd.target_id}</color>");
-                        }
-                    }
-                    yield return new WaitForSeconds(0.2f);
+                    yield return StartCoroutine(PerformGrab(cmd.target_id));
                     break;
 
                 case "RELEASE":
-                    if (grabbedObject != null)
-                    {
-                        var targetRb = grabbedObject.GetComponent<Rigidbody>();
-                        if (targetRb) targetRb.isKinematic = false;
-                        grabbedObject.transform.SetParent(null);
-                        Debug.Log($"<color=cyan>[物理原语] 松开了物体: {grabbedObject.name}</color>");
-                        grabbedObject = null;
-                    }
-                    yield return new WaitForSeconds(0.2f);
+                    PerformRelease();
                     break;
 
                 case "USE_ITEM":
                     TriggerUseLogic();
-                    yield return new WaitForSeconds(0.4f);
                     break;
             }
 
-            // 每个指令后轻微稳定
-            StabilizeMovement();
+            // 小缓冲，避免动作太快
+            yield return new WaitForSeconds(0.15f);
         }
 
-        if (actionDisplay) actionDisplay.text = "原子序列执行完毕";
+        if (actionDisplay != null)
+            actionDisplay.text = "序列执行完毕";
+
         isExecuting = false;
     }
 
@@ -179,5 +157,64 @@ public class CharacterActuator : MonoBehaviour
                 break;
             }
         }
+    }
+
+    private void PerformRelease()
+    {
+        if (grabbedObject != null)
+        {
+            var targetRb = grabbedObject.GetComponent<Rigidbody>();
+            if (targetRb != null)
+                targetRb.isKinematic = false;
+
+            grabbedObject.transform.SetParent(null);
+            Debug.Log($"<color=cyan>[物理原语] 松开物体: {grabbedObject.name}</color>");
+            grabbedObject = null;
+        }
+    }
+
+    private IEnumerator PerformGrab(string targetId)
+    {
+        if (string.IsNullOrEmpty(targetId))
+        {
+            yield return new WaitForSeconds(0.1f);
+            yield break;
+        }
+
+        // 优先精确查找
+        GameObject target = GameObject.Find(targetId);
+
+        // 如果找不到，尝试模糊查找（兼容不同命名）
+        if (target == null)
+        {
+            var semanticObjs = FindObjectsOfType<SemanticObject>();
+            foreach (var sobj in semanticObjs)
+            {
+                if (sobj.gameObject.name.Contains(targetId) || targetId.Contains(sobj.gameObject.name))
+                {
+                    target = sobj.gameObject;
+                    break;
+                }
+            }
+        }
+
+        if (target != null && Vector3.Distance(transform.position, target.transform.position) <= 3.5f)
+        {
+            grabbedObject = target;
+            var targetRb = grabbedObject.GetComponent<Rigidbody>();
+            if (targetRb != null) targetRb.isKinematic = true;
+
+            grabbedObject.transform.SetParent(transform);
+            grabbedObject.transform.localPosition = new Vector3(0, 0.8f, 1.0f); // 调整手持位置
+            grabbedObject.transform.localRotation = Quaternion.identity;
+
+            Debug.Log($"<color=cyan>[物理原语] 成功抓取物体: {grabbedObject.name}</color>");
+        }
+        else
+        {
+            Debug.LogWarning($"[物理原语] GRAB 失败：无法找到目标 {targetId}");
+        }
+
+        yield return new WaitForSeconds(0.25f);
     }
 }

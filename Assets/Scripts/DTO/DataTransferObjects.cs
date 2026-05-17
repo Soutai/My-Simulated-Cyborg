@@ -19,6 +19,10 @@ namespace EmbodiedAI.DTO
     {
         public string monologue;
         public List<PrimitiveCommand> primitive_commands;
+
+        // 新增：Goal 支持
+        public string goal;                    // LLM输出的当前/新目标描述
+        public string goal_target_id;          // 可选：指定目标ID
     }
 
     // Google API 规范需要的底层请求/响应外壳

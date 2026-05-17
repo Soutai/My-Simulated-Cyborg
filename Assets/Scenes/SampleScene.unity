@@ -690,6 +690,7 @@ GameObject:
   - component: {fileID: 1257545195}
   - component: {fileID: 1257545193}
   - component: {fileID: 1257545194}
+  - component: {fileID: 1257545200}
   m_Layer: 0
   m_Name: NPC_Scarface
   m_TagString: Untagged
@@ -804,6 +805,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d25b37fccda767b4aa8592cbb8ef9c6b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AIBrainController
+  attributes: {fileID: 0}
+  radar: {fileID: 0}
+  promptManager: {fileID: 0}
+  httpClient: {fileID: 0}
+  actuator: {fileID: 0}
+  smallBrain: {fileID: 0}
   monologueDisplay: {fileID: 906394210}
   actionDisplay: {fileID: 446441737}
 --- !u!114 &1257545194
@@ -819,6 +826,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CharacterActuator
   forceMultiplier: 5
+  maxHorizontalSpeed: 6
+  brakeForce: 8
 --- !u!114 &1257545195
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -900,6 +909,20 @@ Rigidbody:
   m_Interpolate: 0
   m_Constraints: 80
   m_CollisionDetection: 0
+--- !u!114 &1257545200
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1257545187}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f8d3fde8022d73b4486b1fc87288ed04, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::LocalMotorController
+  tickInterval: 0.2
+  approachDistance: 2.5
 --- !u!1 &1287627497
 GameObject:
   m_ObjectHideFlags: 0
@@ -1643,6 +1666,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TimeManager
   timeText: {fileID: 1553631336}
   realSecondsPerHour: 60
+  aiThinkInterval: 20
 --- !u!4 &1887496494
 Transform:
   m_ObjectHideFlags: 0
