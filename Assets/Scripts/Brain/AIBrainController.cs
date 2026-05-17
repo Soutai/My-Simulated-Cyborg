@@ -33,13 +33,12 @@ public class AIBrainController : MonoBehaviour
 
     void Start()
     {
-        // 挂载时间管理器广播保持不动
         if (TimeManager.Instance != null)
         {
-            TimeManager.Instance.OnGameHourPassed += OnPhysicsBrainTick;
+            // 取消原来的每30分钟事件，改用新的20秒AI事件
+            TimeManager.Instance.OnAITick += OnPhysicsBrainTick;
         }
 
-        // 🌟 修改这里：不要立刻无等待 call，改用协程延迟 0.2 秒再 call
         StartCoroutine(DelayedFirstTick());
     }
 
@@ -135,7 +134,7 @@ public class AIBrainController : MonoBehaviour
     {
         if (TimeManager.Instance != null)
         {
-            TimeManager.Instance.OnGameHourPassed -= OnPhysicsBrainTick;
+            TimeManager.Instance.OnAITick -= OnPhysicsBrainTick;
         }
     }
 }
