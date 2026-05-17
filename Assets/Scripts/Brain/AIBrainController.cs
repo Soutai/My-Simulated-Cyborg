@@ -46,7 +46,6 @@ public class AIBrainController : MonoBehaviour
     private IEnumerator DelayedFirstTick()
     {
         yield return new WaitForSeconds(0.2f);
-        Debug.Log("<color=#00FFCC>[大脑初始化] ⏰ 基础组件与物理时钟已完全就绪，发起开局第一帧自主思考！</color>");
         OnPhysicsBrainTick();
     }
 
@@ -56,7 +55,6 @@ public class AIBrainController : MonoBehaviour
         StartCoroutine(ThinkPhysicsRoutine());
     }
 
-    // AIBrainController.cs 内部片段修正
     private IEnumerator ThinkPhysicsRoutine()
     {
         if (isThinking)
@@ -80,23 +78,43 @@ public class AIBrainController : MonoBehaviour
         string fullPrompt = promptManager.GeneratePhysicsEnginePrompt(
             attributes.satiety, attributes.personality, timeStr, serializedRadarData, heldItemName);
 
+        // ==================== 新增：打印完整 Prompt ====================
+        Debug.Log($"<color=yellow>[{GetCurrentTimestamp()}] [大脑] 📤【发送给AI的完整Prompt】</color>\n{fullPrompt}\n");
+
         Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 📤 发送Prompt给Gemini（等待AI回复）");
 
         // 发送请求
         httpClient.PostPrompt(fullPrompt, (aiRawText) =>
         {
-            Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 📥 收到AI回复，等待结束");
+            // ==================== 新增：打印AI原始回复 ====================
+            Debug.Log($"<color=cyan>[{GetCurrentTimestamp()}] [大脑] 📥【AI原始回复内容】</color>\n{aiRawText}\n");
 
             AIPhysicsDecision npcDecision = ParseBrainResponse(aiRawText);
-            if (npcDecision != null && npcDecision.primitive_commands != null)
+            if (npcDecision != null)
             {
-                Debug.Log($"[{GetCurrentTimestamp()}] [大脑] ✅ 解析成功，执行 {npcDecision.primitive_commands.Count} 个物理原语");
-                if (monologueDisplay) monologueDisplay.text = "AI物理直觉：" + npcDecision.monologue;
-                actuator.ExecutePrimitiveSequence(npcDecision.primitive_commands, actionDisplay);
+                Debug.Log($"[{GetCurrentTimestamp()}] [大脑] ✅ 解析成功，Monologue: {npcDecision.monologue}");
+
+                if (npcDecision.primitive_commands != null && npcDecision.primitive_commands.Count > 0)
+                {
+                    Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 🎯 解析到 {npcDecision.primitive_commands.Count} 个物理原语：");
+
+                    for (int i = 0; i < npcDecision.primitive_commands.Count; i++)
+                    {
+                        var cmd = npcDecision.primitive_commands[i];
+                        Debug.Log($"   [{i + 1}] op = {cmd.op} | target_id = {cmd.target_id} | arg_x = {cmd.arg_x} | arg_z = {cmd.arg_z}");
+                    }
+
+                    if (monologueDisplay) monologueDisplay.text = "AI物理直觉：" + npcDecision.monologue;
+                    actuator.ExecutePrimitiveSequence(npcDecision.primitive_commands, actionDisplay);
+                }
+                else
+                {
+                    Debug.LogWarning($"[{GetCurrentTimestamp()}] [大脑] ⚠️ 解析成功，但没有可执行的原语");
+                }
             }
             else
             {
-                Debug.LogWarning($"[{GetCurrentTimestamp()}] [大脑] ⚠️ 解析失败或无动作");
+                Debug.LogWarning($"[{GetCurrentTimestamp()}] [大脑] ⚠️ 无法解析AI回复");
             }
 
             isThinking = false;

@@ -26,7 +26,6 @@ public class GeminiHttpClient : MonoBehaviour
         if (!string.IsNullOrEmpty(envKey))
         {
             apiKey = envKey.Trim();
-            Debug.Log("<color=#00FF00>[Client] 🔑 已成功从系统环境变量 (GEMINI_API_KEY) 载入 API Key！</color>");
         }
         else
         {
