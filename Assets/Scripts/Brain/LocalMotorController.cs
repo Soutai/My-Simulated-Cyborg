@@ -7,8 +7,8 @@ using EmbodiedAI.DTO;
 public class LocalMotorController : MonoBehaviour
 {
     [Header("小脑参数")]
-    public float tickInterval = 0.2f;           // 小脑更新频率
-    public float approachDistance = 2.5f;       // 接近到此距离自动交互
+    public float tickInterval = 0.2f;
+    public float approachDistance = 2.5f;
 
     private CharacterActuator actuator;
     private PerceptionRadar radar;
@@ -45,6 +45,15 @@ public class LocalMotorController : MonoBehaviour
     {
         if (string.IsNullOrEmpty(currentGoal) || currentGoal == "无") return;
 
+        // 新增：检查目标是否已经完成
+        if (IsGoalAlreadyAchieved())
+        {
+            Debug.Log($"<color=green>[小脑] Goal 已完成: {currentGoal}</color>");
+            currentGoal = "无";
+            currentGoalTargetId = "";
+            return;
+        }
+
         SemanticObject targetObj = FindBestTargetForGoal();
 
         if (targetObj != null)
@@ -62,13 +71,32 @@ public class LocalMotorController : MonoBehaviour
         }
         else if (brain != null)
         {
-            // 目标丢失，请求大脑袋重新决策
             brain.RequestImmediateThink();
         }
     }
 
+    // 新增：判断当前Goal是否已完成（语义化）
+    private bool IsGoalAlreadyAchieved()
+    {
+        if (actuator == null || actuator.CurrentGrabbedObject == null) return false;
+
+        string heldName = actuator.CurrentGrabbedObject.name.ToLower();
+        string goalLower = currentGoal.ToLower();
+
+        if (goalLower.Contains("weapon") || goalLower.Contains("stick"))
+            return heldName.Contains("stick");
+
+        if (goalLower.Contains("food") || goalLower.Contains("fruit"))
+            return heldName.Contains("fruit");
+
+        return false;
+    }
+
     private SemanticObject FindBestTargetForGoal()
     {
+        // 如果已经持有目标，就不需要再找
+        if (IsGoalAlreadyAchieved()) return null;
+
         SemanticObject[] allObjs = FindObjectsOfType<SemanticObject>();
         SemanticObject best = null;
         float minDist = float.MaxValue;
@@ -90,7 +118,6 @@ public class LocalMotorController : MonoBehaviour
     private bool IsRelevantToGoal(string goal, SemanticObject obj)
     {
         if (string.IsNullOrEmpty(goal)) return false;
-
         string g = goal.ToLower();
         string typeStr = obj.semanticType.ToString().ToLower();
 
@@ -100,10 +127,9 @@ public class LocalMotorController : MonoBehaviour
         if (g.Contains("food") || g.Contains("fruit") || g.Contains("吃"))
             return typeStr.Contains("food");
 
-        if (g.Contains("enemy") || g.Contains("wolf") || g.Contains("狼"))
+        if (g.Contains("enemy") || g.Contains("wolf"))
             return typeStr.Contains("enemy");
 
-        // 精确ID匹配
         return !string.IsNullOrEmpty(currentGoalTargetId) &&
                obj.gameObject.name.Contains(currentGoalTargetId);
     }
@@ -111,12 +137,9 @@ public class LocalMotorController : MonoBehaviour
     private void MoveTowardsTarget(Vector3 targetPos)
     {
         Vector3 dir = (targetPos - transform.position).normalized;
-        float argX = dir.x * 3.2f;
-        float argZ = dir.z * 3.2f;
-
         var commands = new List<PrimitiveCommand>
         {
-            new PrimitiveCommand { op = "APPLY_FORCE", arg_x = argX, arg_z = argZ }
+            new PrimitiveCommand { op = "APPLY_FORCE", arg_x = dir.x * 3.2f, arg_z = dir.z * 3.2f }
         };
 
         actuator.ExecutePrimitiveSequence(commands, null);
