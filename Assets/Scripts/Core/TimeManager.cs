@@ -9,18 +9,17 @@ public class TimeManager : MonoBehaviour
     public Text timeText;
 
     [Header("时间流逝速度")]
-    [Tooltip("现实中多少秒等于游戏1小时。60 = 现实1秒 = 游戏1分钟")]
+    [Tooltip("现实中多少秒 = 游戏1小时。60 = 现实1秒 = 游戏1分钟")]
     public float realSecondsPerHour = 60f;
 
     [Header("AI 思考频率")]
     [Tooltip("现实中每多少秒调用一次AI思考")]
     public float aiThinkInterval = 20f;
 
-    // 内部变量
-    private float totalGameMinutes = 8 * 60f;   // 从 08:00 开始
+    private float totalGameMinutes = 8 * 60f;
     private float aiTimer = 0f;
 
-    public System.Action OnAITick;
+    public System.Action OnAITick;   // ← 新事件
 
     void Awake()
     {
@@ -30,16 +29,14 @@ public class TimeManager : MonoBehaviour
 
     void Update()
     {
-        // 推进游戏时间
+        // 游戏时间推进
         float minutesPerRealSecond = 60f / realSecondsPerHour;
         totalGameMinutes += Time.deltaTime * minutesPerRealSecond;
 
         if (totalGameMinutes >= 1440f)
-        {
             totalGameMinutes -= 1440f;
-        }
 
-        // AI 思考定时器
+        // AI 独立定时器（每20秒触发一次）
         aiTimer += Time.deltaTime;
         if (aiTimer >= aiThinkInterval)
         {
@@ -61,9 +58,7 @@ public class TimeManager : MonoBehaviour
     private void UpdateTimerUI()
     {
         if (timeText != null)
-        {
             timeText.text = GetCurrentTimeString();
-        }
     }
 
     public void ResetTime()

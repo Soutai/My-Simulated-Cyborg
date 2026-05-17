@@ -35,7 +35,7 @@ public class AIBrainController : MonoBehaviour
     {
         if (TimeManager.Instance != null)
         {
-            // 取消原来的每30分钟事件，改用新的20秒AI事件
+            // 改用新的20秒AI事件
             TimeManager.Instance.OnAITick += OnPhysicsBrainTick;
         }
 
@@ -59,46 +59,54 @@ public class AIBrainController : MonoBehaviour
     // AIBrainController.cs 内部片段修正
     private IEnumerator ThinkPhysicsRoutine()
     {
+        if (isThinking)
+        {
+            Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 正在思考中，跳过本次触发");
+            yield break;
+        }
+
         isThinking = true;
+
+        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 🚀 开始新一轮思考...");
 
         string timeStr = TimeManager.Instance != null ? TimeManager.Instance.GetCurrentTimeString() : "00:00";
         string serializedRadarData = radar.ScanEnvironmentToSemanticJson();
-        // 🌟【新增提取】先去物理执行器问一下现在手里到底抓没抓东西
         string heldItemName = "无（手里没有任何武器或道具，手无寸铁）";
         if (actuator != null && actuator.CurrentGrabbedObject != null)
         {
-            heldItemName = actuator.CurrentGrabbedObject.name; // 此时拿到的就是类似 "Stick" 的实体名字
+            heldItemName = actuator.CurrentGrabbedObject.name;
         }
 
-        // 🌟【修改传参】把刚才提取到的 heldItemName 传给末尾参数
         string fullPrompt = promptManager.GeneratePhysicsEnginePrompt(
-            attributes.satiety,
-            attributes.personality,
-            timeStr,
-            serializedRadarData,
-            heldItemName // 🌟 填在这里
-        );
+            attributes.satiety, attributes.personality, timeStr, serializedRadarData, heldItemName);
 
-        // 1. 调用纯净的通信客户端，此时回调拿到的是纯文本
-        // 确认调用时传入了 3 个参数：1.Prompt字符串, 2.成功回调Lambda, 3.失败回调Lambda
+        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 📤 发送Prompt给Gemini（等待AI回复）");
+
+        // 发送请求
         httpClient.PostPrompt(fullPrompt, (aiRawText) =>
         {
-            // 成功回调逻辑（保持不动）
+            Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 📥 收到AI回复，等待结束");
+
             AIPhysicsDecision npcDecision = ParseBrainResponse(aiRawText);
             if (npcDecision != null && npcDecision.primitive_commands != null)
             {
+                Debug.Log($"[{GetCurrentTimestamp()}] [大脑] ✅ 解析成功，执行 {npcDecision.primitive_commands.Count} 个物理原语");
                 if (monologueDisplay) monologueDisplay.text = "AI物理直觉：" + npcDecision.monologue;
                 actuator.ExecutePrimitiveSequence(npcDecision.primitive_commands, actionDisplay);
             }
+            else
+            {
+                Debug.LogWarning($"[{GetCurrentTimestamp()}] [大脑] ⚠️ 解析失败或无动作");
+            }
+
+            isThinking = false;
         },
         () =>
         {
-            // 🌟 失败回调逻辑
-            Debug.LogWarning("<color=orange>[大脑防死锁] ⚠️ 发现大模型请求失败，自动重置思考锁。</color>");
+            Debug.LogWarning($"[{GetCurrentTimestamp()}] [大脑] ❌ 请求失败，解锁思考状态");
             isThinking = false;
         });
 
-        // 🌟 改为直接单步跳出协程即可：
         yield break;
     }
 
@@ -136,5 +144,11 @@ public class AIBrainController : MonoBehaviour
         {
             TimeManager.Instance.OnAITick -= OnPhysicsBrainTick;
         }
+    }
+
+    // 新增辅助方法（放在类最后）
+    private string GetCurrentTimestamp()
+    {
+        return System.DateTime.Now.ToString("HH:mm:ss.fff");
     }
 }

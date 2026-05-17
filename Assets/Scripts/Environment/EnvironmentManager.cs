@@ -44,20 +44,11 @@ public class EnvironmentManager : MonoBehaviour
 
     private IEnumerator SpawnFoodRoutine()
     {
-        // 诊断日志 1
-        Debug.Log("<color=yellow>[环境系统诊断] ⌛ 正在等待时钟单例就绪...</color>");
-
         while (TimeManager.Instance == null) yield return null;
-
-        // 诊断日志 2
-        Debug.Log($"<color=green>[环境系统诊断] ✨ 时钟单例已接通！当前每小时流逝速度为：{TimeManager.Instance.realSecondsPerHour}秒。定时生成器正式启动！</color>");
 
         while (true)
         {
             float realSeconds = spawnIntervalInGameHours * (TimeManager.Instance.realSecondsPerHour);
-
-            // 诊断日志 3
-            Debug.Log($"<color=white>[环境系统诊断] ⏱️ 定时器归零，进入倒计时：将在这个现实世界等待 {realSeconds} 秒后长出果子...</color>");
 
             yield return new WaitForSeconds(realSeconds);
 
