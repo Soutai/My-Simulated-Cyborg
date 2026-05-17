@@ -10,7 +10,6 @@ public class CharacterActuator : MonoBehaviour
     private Rigidbody rb;
     private GameObject grabbedObject = null;
     private bool isExecuting = false;
-    // 🌟【新增：最小限度暴露接口】提供给雷达进行“自我身体状态”过滤的只读属性
     public GameObject CurrentGrabbedObject => grabbedObject;
 
     void Awake()

@@ -3,44 +3,54 @@ using UnityEngine;
 using UnityEngine.Networking;
 using System.Collections;
 using System.Text;
-using System.IO; // 支持 File.Exists 和 File.ReadAllText
+using System.IO;
 using EmbodiedAI.DTO;
 
 public class GeminiHttpClient : MonoBehaviour
 {
-    private string apiKey = "YOUR_GEMINI_API_KEY";
-    // 🌟【已修复】：修正了行尾多余的反斜杠闭合错误
+    private string apiKey = ""; // 初始留空
     private string apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
-    // 在游戏启动时，最小限度地从外部 txt 文件载入真正的 API Key
     void Awake()
     {
-        string keyFilePath = Path.Combine(Application.dataPath, "../gemini_key.txt");
-        if (File.Exists(keyFilePath))
+        // 🌟【修改点】：直接从系统环境变量中读取 Key
+        // 注意：EnvironmentVariableTarget.User 表示读取当前用户的环境变量
+        string envKey = System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.User);
+
+        // 如果用户变量没拿到，尝试拿系统全局变量
+        if (string.IsNullOrEmpty(envKey))
         {
-            // 读取文件并去掉可能存在的前后空格或换行符
-            apiKey = File.ReadAllText(keyFilePath).Trim();
-            Debug.Log("<color=#00FF00>[Client] 🔑 已成功从外部 gemini_key.txt 载入 API Key！</color>");
+            envKey = System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Machine);
+        }
+
+        if (!string.IsNullOrEmpty(envKey))
+        {
+            apiKey = envKey.Trim();
+            Debug.Log("<color=#00FF00>[Client] 🔑 已成功从系统环境变量 (GEMINI_API_KEY) 载入 API Key！</color>");
         }
         else
         {
-            Debug.LogWarning($"[Client] ⚠️ 未在路径找到 API Key 文件: {keyFilePath}，将使用面板/默认配置。");
+            Debug.LogError("[Client] ❌ 未能在系统环境变量中找到 'GEMINI_API_KEY'！API 请求将无法正常工作。");
         }
     }
 
-    // 回调返回纯文本（Raw Text）
-    // 🌟 确保末尾多了一个 System.Action onError = null
+    // 后续的 PostPrompt 和 PostPromptRoutine 代码保持不变...
     public void PostPrompt(string prompt, System.Action<string> onRawTextReceived, System.Action onError = null)
     {
-        // 🌟 确保这里把 onError 作为第三个参数传给了协程！
         StartCoroutine(PostPromptRoutine(prompt, onRawTextReceived, onError));
     }
 
     private IEnumerator PostPromptRoutine(string prompt, System.Action<string> onRawTextReceived, System.Action onError)
     {
+        if (string.IsNullOrEmpty(apiKey))
+        {
+            Debug.LogError("[Client] API Key 为空，拒绝发送请求。");
+            onError?.Invoke();
+            yield break;
+        }
+
         string url = $"{apiUrl}?key={apiKey}";
 
-        // 组装通用的 Google API 请求外壳
         GeminiRequest requestBody = new GeminiRequest
         {
             contents = new GeminiRequest.RequestContent[]
@@ -66,25 +76,21 @@ public class GeminiHttpClient : MonoBehaviour
             if (request.result == UnityWebRequest.Result.Success)
             {
                 string rawJson = request.downloadHandler.text;
-
-                // 在底层只做最基础的外壳剥离，拿到 AI 的纯文本回复
                 try
                 {
                     var res = JsonUtility.FromJson<GeminiResponse>(rawJson);
                     string aiTextContent = res.candidates[0].content.parts[0].text;
-
-                    // 将纯文本回调给上层大脑去解析
                     onRawTextReceived?.Invoke(aiTextContent);
                 }
                 catch (System.Exception e)
                 {
                     Debug.LogError($"[Client] 基础外壳 JSON 解析失败: {e.Message}");
+                    onError?.Invoke();
                 }
             }
             else
             {
                 Debug.LogError($"[Client] API 请求失败: {request.error}");
-                // 🌟 这样里面就能认得 onError 了！
                 onError?.Invoke();
             }
         }
