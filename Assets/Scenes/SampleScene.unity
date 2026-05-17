@@ -1642,7 +1642,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TimeManager
   timeText: {fileID: 1553631336}
-  realSecondsPerHour: 15
+  realSecondsPerHour: 60
 --- !u!4 &1887496494
 Transform:
   m_ObjectHideFlags: 0
