@@ -10,7 +10,7 @@ public class TimeManager : MonoBehaviour
 
     [Header("时间物理流逝比例")]
     [Tooltip("现实中多少秒等于游戏里的1个小时。12分钟24小时 = 720秒/24 = 30秒/一小时")]
-    public float realSecondsPerHour = 30f;
+    public float realSecondsPerHour = 15f;
 
     // 系统内部时间（默认从清晨 08:00 开始生活）
     private float gameHour = 8f;
@@ -27,19 +27,20 @@ public class TimeManager : MonoBehaviour
 
     void Update()
     {
-        // 1小时(60分钟)对应 realSecondsPerHour 秒
         float minutesPerRealSecond = 60f / realSecondsPerHour;
         gameMinute += Time.deltaTime * minutesPerRealSecond;
 
-        if (gameMinute >= 60f)
+        // 🌟 精准扣除步长并推进时钟边界
+        if (gameMinute >= 30f)
         {
-            gameMinute -= 60f;
-            gameHour += 1f;
+            gameMinute -= 30f;
+            gameHour += 0.5f;
 
-            // 触发整点通知，让AI进行生命周期自转
+            // 呼叫大模型 Tick
             OnGameHourPassed?.Invoke();
         }
 
+        // 🌟 防止小时数无限制溢出
         if (gameHour >= 24f)
         {
             gameHour -= 24f;

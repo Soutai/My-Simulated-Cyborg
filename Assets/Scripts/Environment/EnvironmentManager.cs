@@ -11,7 +11,7 @@ public class EnvironmentManager : MonoBehaviour
     public GameObject foodPrefab;
 
     [Tooltip("每隔多少游戏小时刷新一次水果")]
-    public float spawnIntervalInGameHours = 0.5f;
+    public float spawnIntervalInGameHours = 1f;
 
     [Header("随机生成区域边界")]
     public float minX = -22f;
