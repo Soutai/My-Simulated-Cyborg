@@ -20,12 +20,13 @@ public class LocalMotorController : MonoBehaviour
     private string currentGoalTargetId = "";
     private PrimitiveCommand arrivalCommand = null;
 
-    // 🌟 新增：多步计划队列（最小实现）
+    // 🌟 多步计划队列
     private List<PlanStep> currentPlanSteps = new List<PlanStep>();
     private int currentStepIndex = 0;
 
     private float lastTickTime = 0f;
 
+    // 🌟 持久目标相关
     private string currentPersistentGoal = "";
     private PersistentIntent currentPersistentIntent = PersistentIntent.None;
 
@@ -46,6 +47,9 @@ public class LocalMotorController : MonoBehaviour
     // 接收大脑下发的计划（单步或多步）
     public void SetNewPlan(List<PlanStep> planSteps, string initialGoal = "")
     {
+        // 取消之前的持久探索
+        CancelInvoke("WanderStep");
+
         currentPlanSteps = planSteps ?? new List<PlanStep>();
         currentStepIndex = 0;
 
@@ -68,7 +72,6 @@ public class LocalMotorController : MonoBehaviour
         }
         else if (!string.IsNullOrEmpty(initialGoal))
         {
-            // 兼容旧单步模式
             currentGoal = initialGoal;
         }
     }
@@ -104,19 +107,16 @@ public class LocalMotorController : MonoBehaviour
                 actuator.ExecutePrimitiveSequence(cmds, null);
             }
 
-            // 执行完当前步骤 → 推进到下一步
             NextStepOrReset();
         }
     }
 
-    // 🌟 自动推进到下一步（核心）
     private void NextStepOrReset()
     {
         currentStepIndex++;
 
         if (currentStepIndex < currentPlanSteps.Count)
         {
-            // 执行下一步
             var nextStep = currentPlanSteps[currentStepIndex];
             currentGoal = nextStep.description;
             currentGoalTargetId = nextStep.target_id;
@@ -132,7 +132,6 @@ public class LocalMotorController : MonoBehaviour
         }
         else
         {
-            // 整个计划执行完毕
             Debug.Log("<color=lime>[小脑] ✅ 完整计划执行完毕，请求大脑重新思考</color>");
             currentPlanSteps.Clear();
             currentStepIndex = 0;
@@ -149,9 +148,11 @@ public class LocalMotorController : MonoBehaviour
     {
         if (string.IsNullOrEmpty(goalDescription)) return;
 
+        // 取消之前的探索循环
+        CancelInvoke("WanderStep");
+
         currentPersistentGoal = goalDescription;
 
-        // 使用静态方法调用（不再需要 FindObjectOfType）
         var strategy = SandboxProtocolConfig.GetStrategy(goalDescription);
 
         if (strategy != null)
@@ -181,19 +182,35 @@ public class LocalMotorController : MonoBehaviour
 
     private void StartBasicWander()
     {
-        Debug.Log("<color=cyan>[小脑] 开始基础探索模式</color>");
+        Debug.Log("<color=cyan>[小脑] 开始持久基础探索模式（每2.5秒换方向）</color>");
+        InvokeRepeating("WanderStep", 0f, 2.5f);
+    }
+
+    private void WanderStep()
+    {
+        if (currentPersistentIntent == PersistentIntent.None)
+        {
+            CancelInvoke("WanderStep");
+            return;
+        }
+
         Vector3 dir = Random.insideUnitSphere;
         dir.y = 0;
         dir.Normalize();
 
-        var cmd = new PrimitiveCommand { op = "APPLY_FORCE", arg_x = dir.x * 3f, arg_z = dir.z * 3f };
+        var cmd = new PrimitiveCommand
+        {
+            op = "APPLY_FORCE",
+            arg_x = dir.x * 3.2f,
+            arg_z = dir.z * 3.2f
+        };
         actuator.ExecutePrimitiveSequence(new List<PrimitiveCommand> { cmd }, null);
     }
 
     private void StartForagingSearch()
     {
         Debug.Log("<color=cyan>[小脑] 开始觅食搜索模式</color>");
-        StartBasicWander();   // 后续可优化为优先找 Food
+        StartBasicWander();
     }
 
     private void StartFrontierExploration()
@@ -214,15 +231,19 @@ public class LocalMotorController : MonoBehaviour
 
     public void InterruptAndClearGoal()
     {
+        CancelInvoke("WanderStep");   // 停止持久探索
+
         currentPlanSteps.Clear();
         currentStepIndex = 0;
+        currentPersistentGoal = "";
+        currentPersistentIntent = PersistentIntent.None;
         currentGoal = "无";
         currentGoalTargetId = "";
         arrivalCommand = null;
+
         if (actuator != null) actuator.StopAllPhysicalMovement();
     }
 
-    // 🌟 新增：判断当前是否还有计划步骤
     public bool IsPlanEmpty()
     {
         return currentPlanSteps == null || currentPlanSteps.Count == 0 || currentStepIndex >= currentPlanSteps.Count;

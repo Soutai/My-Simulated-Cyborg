@@ -119,26 +119,35 @@ public class AIBrainController : MonoBehaviour
         if (monologueDisplay != null)
             monologueDisplay.text = decision.monologue;
 
-        // 1. 执行即时原子动作
+        // 1. 执行即时原子动作（最高优先级）
         if (decision.primitive_commands != null && decision.primitive_commands.Count > 0)
         {
             Debug.Log($"<color=green>[大脑] ⚡ 执行 {decision.primitive_commands.Count} 条即时原语</color>");
             actuator?.ExecutePrimitiveSequence(decision.primitive_commands, actionDisplay);
         }
 
-        // 2. 多步短期计划（优先）
+        // 2. 持久目标（长期自主行为）—— 优先处理
+        if (!string.IsNullOrEmpty(decision.persistent_goal))
+        {
+            Debug.Log($"<color=magenta>[大脑] 🌌 检测到持久目标 → {decision.persistent_goal}</color>");
+            if (smallBrain != null)
+            {
+                smallBrain.SetPersistentGoal(decision.persistent_goal);
+            }
+            isThinking = false;
+            return;   // 直接返回，不再执行短期计划
+        }
+
+        // 3. 多步短期计划
         if (decision.plan_steps != null && decision.plan_steps.Count > 0)
         {
             Debug.Log($"<color=cyan>[大脑] 📋 收到多步计划，共 {decision.plan_steps.Count} 步</color>");
-            smallBrain?.SetNewPlan(decision.plan_steps, decision.goal);
+            if (smallBrain != null)
+            {
+                smallBrain.SetNewPlan(decision.plan_steps, decision.goal);
+            }
         }
-        // 3. 持久目标（长期自主行为）
-        else if (!string.IsNullOrEmpty(decision.persistent_goal))
-        {
-            Debug.Log($"<color=magenta>[大脑] 🌌 收到持久目标 → {decision.persistent_goal}</color>");
-            smallBrain?.SetPersistentGoal(decision.persistent_goal);
-        }
-        // 4. 兼容旧单步模式
+        // 4. 兼容旧的单步 goal
         else if (smallBrain != null && !string.IsNullOrEmpty(decision.goal_target_id))
         {
             string goalStr = string.IsNullOrEmpty(decision.goal) ? "无" : decision.goal;
@@ -166,7 +175,6 @@ public class AIBrainController : MonoBehaviour
 
         isThinking = false;
     }
-
     private void OnAIRequestFailed()
     {
         Debug.LogWarning($"[{GetCurrentTimestamp()}] [大脑] ❌ 请求失败");

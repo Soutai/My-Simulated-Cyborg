@@ -4,15 +4,14 @@ public class PromptManager : MonoBehaviour
 {
     // 🌟【精准修复版】：既保留了双手独立持物，又完美还原了底层物理推力的坐标控制参数！
     public string GeneratePhysicsEnginePrompt(
-        float satiety,
-        string personality,
-        string currentTimeStr,
-        string serializedRadarJson,
-        string leftHandItem,
-        string rightHandItem,
-        string currentGoal = "无")
+    float satiety,
+    string personality,
+    string currentTimeStr,
+    string serializedRadarJson,
+    string leftHandItem,
+    string rightHandItem,
+    string currentGoal = "无")
     {
-        // 确保空状态有文字描述
         string leftItemStr = string.IsNullOrEmpty(leftHandItem) ? "空无一物" : leftHandItem;
         string rightItemStr = string.IsNullOrEmpty(rightHandItem) ? "空无一物" : rightHandItem;
 
@@ -32,26 +31,9 @@ public class PromptManager : MonoBehaviour
             "## 3. 核心行为准则（双手协同协作与控制流托管）\n" +
             "- 你是大脑，负责制定持久目标（goal）和当下的即时物理原语操作。\n" +
             "- 除非出现更高优先级危险（狼极近、饱食度很低），否则要坚持当前目标。\n" +
-            "- 小脑具有导航托管机制。当你下发长期目标（goal）和目标ID（goal_target_id）时，小脑会自动物理驱动肉身逼近目标。" +
-            "抵达后，小脑会自动释放你在 `goal_arrival_command` 中托付的临门一脚动作。\n" +
+            "- 小脑具有导航托管机制。当你下发长期目标（goal）和目标ID（goal_target_id）时，小脑会自动物理驱动肉身逼近目标。抵达后，小脑会自动释放你在 `goal_arrival_command` 中托付的临门一脚动作。\n" +
             "- 🌟【双手独立持物机制】：你拥有两只手，可以右手握着武器保持防卫，同时用空着的左手去捡起并使用其他物品（如食物），无需丢弃武器。\n" +
-            "- 🌟【两段式物理进食】：你无法直接吃掉地上的水果。正确做法是：" +
-            "1. 发现某只手空闲，下发长期目标去 GRAB 水果，并指定该手（如 \"hand\": \"Left\"）；" +
-            "2. 当该水果成功进入你手中后，在下一轮决策里，对拿着水果的那只手发布 USE_ITEM 即可塞入嘴中消化。\n\n" +
-
-            "## 4. 托管示例决策参考（双手协同版）\n" +
-            "- 如果你想去捡起木棍（当前双手空闲，准备用右手拿）：\n" +
-            "  \"goal\": \"获取最近的武器以自卫\", \"goal_target_id\": \"Stick_1\", \"goal_arrival_command\": { \"op\": \"GRAB\", \"hand\": \"Right\", \"target_id\": \"Stick_1\" }\n" +
-            "- 如果你想去吃某个水果（当前右手拿着木棍，左手空闲）：\n" +
-            "  大脑无需丢弃武器，直接指定让左手去抓取水果：\n" +
-            "  \"goal\": \"用左手去抓取水果进食\", \"goal_target_id\": \"Fruit_3\", \"goal_arrival_command\": { \"op\": \"GRAB\", \"hand\": \"Left\", \"target_id\": \"Fruit_3\" }\n" +
-            "- 如果水果已经顺利抓在左手上了（🌟 左手持物: Fruit_3，右手拿着木棍）：\n" +
-            "  大脑应当发出立即执行指令，指定使用左手物品进食，右手的木棍保持不动：\n" +
-            "  {{ \"monologue\": \"水果已在左手，我现在让左手执行 USE_ITEM 吃掉它。\", \"primitive_commands\": [{{ \"op\": \"USE_ITEM\", \"hand\": \"Left\" }}], \"goal\": \"无\", \"goal_target_id\": \"\", \"goal_arrival_command\": null }}\n" +
-            "- 如果你想拿着右手的武器去打狼：\n" +
-            "  \"goal\": \"驱赶附近的狼以确保安全\", \"goal_target_id\": \"Wolf_1\", \"goal_arrival_command\": { \"op\": \"USE_ITEM\", \"hand\": \"Right\" }\n" +
-            "- 如果你当前只是在避险或者没有长期目标（需要大脑自己实时输出推力控位走线）：\n" +
-            "  {{ \"monologue\": \"目前安全，我需要往右前方稍微移动一下观察环境。\", \"primitive_commands\": [{{ \"op\": \"APPLY_FORCE\", \"arg_x\": 2.0, \"arg_z\": 1.5, \"target_id\": \"\", \"hand\": \"\" }}], \"goal\": \"无\", \"goal_target_id\": \"\", \"goal_arrival_command\": null }}\n\n" +
+            "- 🌟【两段式物理进食】：你无法直接吃掉地上的水果。正确做法是：1. 发现某只手空闲，下发长期目标去 GRAB 水果，并指定该手（如 \"hand\": \"Left\"）；2. 当该水果成功进入你手中后，在下一轮决策里，对拿着水果的那只手发布 USE_ITEM 即可塞入嘴中消化。\n\n" +
 
             "## 4.5 多步规划能力（强烈推荐）\n" +
             "- 你拥有优秀的战略规划能力。请**每次思考时都制定2~3步连贯的行动计划**（plan_steps），让小脑可以连续高效执行。\n" +
@@ -61,18 +43,19 @@ public class PromptManager : MonoBehaviour
             "  - 先抓取食物作为储备 → 后续视饱食度决定是否吃掉\n" +
             "  - 探索区域 → 寻找食物 → 进食\n" +
             "- plan_steps 数组中每一项必须包含 description、target_id、arrival_op、hand。\n" +
-            "- 只有当整个计划全部执行完毕、或出现新的高优先级威胁、或饱食度过低时，才需要我重新决策。\n" +
-            "- 请根据当前饱食度、威胁程度、持物状态，自主制定最优的多步生存计划。\n\n" +
+            "- 只有当整个计划全部执行完毕、或出现新的高优先级威胁、或饱食度过低时，才需要我重新决策。\n\n" +
 
             "## 4.6 持久目标能力（长期自主行为）\n" +
-            "- 当短期计划无法完全解决问题时，你可以输出 `persistent_goal`，启动长期自主行为。\n" +
-            "- 示例：\"长期寻找食物\"、\"区域警戒探索\"、\"扩大安全范围\" 等。\n" +
-            "- 小脑会根据 SandboxProtocolConfig 的机制理解你的意图，并持续执行，直到目标达成或出现更高优先级事件。\n" +
-            "- 这允许你制定长时间的生存策略，而不需要每一步都重新思考。\n\n" +
+            "- 当你需要进行长时间、无法用几步计划完成的行为时，**必须使用 `persistent_goal` 字段**启动长期模式。\n" +
+            "- 示例：\n" +
+            "  - \"长期寻找食物\"（会持续探索直到找到食物）\n" +
+            "  - \"区域警戒探索\"（持续巡逻、扩大视野、寻找潜在威胁）\n" +
+            "  - \"扩大安全范围\"\n" +
+            "- 小脑会根据 SandboxProtocolConfig 的机制理解你的意图，并**持续执行**该目标，直到你给出新指令或出现更高优先级事件。\n" +
+            "- **重要**：短期明确动作用 `plan_steps`，长期持续行为**必须**用 `persistent_goal`。\n\n" +
 
             "## 5. 绝对限制 JSON 响应格式\n" +
-            "必须严格返回标准的 JSON 格式块，不要包含任何 markdown 解释。在涉及到 GRAB/RELEASE/USE_ITEM 时必须包含 \"hand\" 字段。" +
-            "在涉及到 GRAB/RELEASE/USE_ITEM 的命令时，参数 \"hand\" 必须严格输出为 \"Left\" 或 \"Right\"，严禁留空或使用其他拼写。\n" +
+            "必须严格返回标准的 JSON 格式块，不要包含任何 markdown 解释。在涉及到 GRAB/RELEASE/USE_ITEM 时必须包含 \"hand\" 字段。在涉及到 GRAB/RELEASE/USE_ITEM 的命令时，参数 \"hand\" 必须严格输出为 \"Left\" 或 \"Right\"，严禁留空或使用其他拼写。\n" +
             "格式如下：\n" +
             "{\n" +
             "  \"monologue\": \"思考过程（中文）...\",\n" +
@@ -81,10 +64,12 @@ public class PromptManager : MonoBehaviour
             "  ],\n" +
             "  \"goal\": \"持久目标描述\",\n" +
             "  \"goal_target_id\": \"目标物体ID\",\n" +
-            "  \"goal_arrival_command\": { \"op\": \"GRAB\", \"hand\": \"Left\", \"target_id\": \"Fruit_3\" }\n" +
-            "}\n" +
+            "  \"goal_arrival_command\": { \"op\": \"GRAB\", \"hand\": \"Left\", \"target_id\": \"Fruit_3\" },\n" +
+            "  \"plan_steps\": [],\n" +
+            "  \"persistent_goal\": \"长期寻找食物\"   // ← 长期行为时使用\n" +
+            "}\n\n" +
 
-            "扩展格式示例（推荐返回 plan_steps）:\n" +
+            "扩展格式示例（推荐返回 plan_steps 或 persistent_goal）:\n" +
             "{\n" +
             "  \"monologue\": \"...\",\n" +
             "  \"primitive_commands\": [],\n" +
