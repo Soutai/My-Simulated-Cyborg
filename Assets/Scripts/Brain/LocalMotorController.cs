@@ -148,7 +148,7 @@ public class LocalMotorController : MonoBehaviour
     {
         if (string.IsNullOrEmpty(goalDescription)) return;
 
-        // 取消之前的探索循环
+        // 取消之前的随机移动
         CancelInvoke("WanderStep");
 
         currentPersistentGoal = goalDescription;
@@ -158,65 +158,16 @@ public class LocalMotorController : MonoBehaviour
         if (strategy != null)
         {
             currentPersistentIntent = strategy.intentType;
-            Debug.Log($"<color=cyan>[小脑] 🌌 进入持久意图 → {strategy.intentType} ({strategy.executionHint})</color>");
+            Debug.Log($"<color=cyan>[小脑] 🌌 进入持久意图 → {strategy.intentType}</color>");
+            Debug.Log($"<color=cyan>[小脑] 📜 执行策略: {strategy.executionGuidance}</color>");
 
-            switch (strategy.executionHint)
-            {
-                case "foraging_search":
-                    StartForagingSearch();
-                    break;
-                case "frontier_explore":
-                    StartFrontierExploration();
-                    break;
-                default:
-                    StartBasicWander();
-                    break;
-            }
+            // 【重要修改】不再主动随机移动，等待 AI 下发 APPLY_FORCE
+            // 小脑只标记自己处于持久模式
         }
         else
         {
-            Debug.LogWarning($"[小脑] 未知持久目标: {goalDescription}，使用默认探索");
-            StartBasicWander();
+            Debug.LogWarning($"[小脑] 未知持久目标: {goalDescription}");
         }
-    }
-
-    private void StartBasicWander()
-    {
-        Debug.Log("<color=cyan>[小脑] 开始持久基础探索模式（每2.5秒换方向）</color>");
-        InvokeRepeating("WanderStep", 0f, 2.5f);
-    }
-
-    private void WanderStep()
-    {
-        if (currentPersistentIntent == PersistentIntent.None)
-        {
-            CancelInvoke("WanderStep");
-            return;
-        }
-
-        Vector3 dir = Random.insideUnitSphere;
-        dir.y = 0;
-        dir.Normalize();
-
-        var cmd = new PrimitiveCommand
-        {
-            op = "APPLY_FORCE",
-            arg_x = dir.x * 3.2f,
-            arg_z = dir.z * 3.2f
-        };
-        actuator.ExecutePrimitiveSequence(new List<PrimitiveCommand> { cmd }, null);
-    }
-
-    private void StartForagingSearch()
-    {
-        Debug.Log("<color=cyan>[小脑] 开始觅食搜索模式</color>");
-        StartBasicWander();
-    }
-
-    private void StartFrontierExploration()
-    {
-        Debug.Log("<color=cyan>[小脑] 开始前沿探索模式</color>");
-        StartBasicWander();
     }
 
     private void MoveTowardsTarget(Vector3 targetPos)
