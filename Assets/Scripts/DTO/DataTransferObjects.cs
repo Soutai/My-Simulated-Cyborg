@@ -8,20 +8,26 @@ namespace EmbodiedAI.DTO
     [System.Serializable]
     public class PrimitiveCommand
     {
-        public string op;        // 物理原语操作码: APPLY_FORCE, GRAB, RELEASE, USE_ITEM
-        public float arg_x;      // 专为 APPLY_FORCE 准备的水平X分量力
-        public float arg_z;      // 专为 APPLY_FORCE 准备的水平Z分量力
-        public string target_id; // 专为 GRAB 准备的目标物体唯一标识
+        public string op;        // APPLY_FORCE, GRAB, RELEASE, USE_ITEM
+        public float arg_x;
+        public float arg_z;
+        public string target_id;
+
+        // 🌟【双手新增】指定本次物理原语作用于哪只手: "Left" 或 "Right"
+        // 规定：小脑移动时默认不依赖手；但 GRAB, RELEASE, USE_ITEM 必须指定手
+        public string hand;
     }
 
     [System.Serializable]
     public class AIPhysicsDecision
     {
         public string monologue;
-        public List<PrimitiveCommand> primitive_commands; // 立即执行的指令（比如转身、当下的闪避）
-        public string goal;                    // 目标描述，如 "获取最近的武器"
-        public string goal_target_id;          // 目标物体唯一ID，如 "Stick"
-        public PrimitiveCommand goal_arrival_command; // 🌟 核心：到达目标附近后，小脑代为触发的物理原语！
+        public List<PrimitiveCommand> primitive_commands;
+        public string goal;
+        public string goal_target_id;
+
+        // 🌟【大小脑协作升级】小脑护送肉身抵达后，指定由哪只手去执行临门一脚
+        public PrimitiveCommand goal_arrival_command;
     }
 
     // Google API 规范需要的底层请求/响应外壳

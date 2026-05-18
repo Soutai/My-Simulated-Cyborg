@@ -59,6 +59,8 @@ public class AIBrainController : MonoBehaviour
         if (actuator == null) actuator = GetComponent<CharacterActuator>();
         if (smallBrain == null) smallBrain = GetComponent<LocalMotorController>();
 
+        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 🔍 组件检查 → smallBrain: {(smallBrain != null ? "✅ 存在" : "❌ NULL")}");  // ← 只加这一行
+
         // 再次检查关键组件
         if (promptManager == null || radar == null || attributes == null || httpClient == null)
         {
@@ -83,7 +85,7 @@ public class AIBrainController : MonoBehaviour
 
         Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 📤 发送Prompt给Gemini");
 
-        // ======= 🛠️ 新增：在控制台打印发送给 AI 的完整 Prompt =======
+        // ======= 在控制台打印发送给 AI 的完整 Prompt （保留原有风格）=======
         Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 📄 发送给AI的完整Prompt内容如下：\n{fullPrompt}");
 
         // ==================== 🛠️ 最小修改：捕获发送网络请求瞬间的关键状态快照 ====================
@@ -96,13 +98,9 @@ public class AIBrainController : MonoBehaviour
     }
 
     // AIBrainController.cs 内部的方法修改
-    // ==================== 🛠️ 修改方法签名：将历史快照信息传入回调 ====================
     private void OnAIResponseReceived(string rawResponse, string snapshotHeld, string snapshotGoal)
     {
         Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 📥 收到AI回复");
-
-        // ======= 🛠️ 新增：在控制台打印收到的完整 AI 原始回复 =======
-        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 💬 收到的AI原始回复内容如下：\n{rawResponse}");
 
         AIPhysicsDecision decision = ParseBrainResponse(rawResponse);
         if (decision == null)
@@ -112,31 +110,31 @@ public class AIBrainController : MonoBehaviour
             return;
         }
 
-        // ==================== 🛠️ 核心修复：时空一致性与质变状态校验 ====================
+        Debug.Log($"<color=yellow>[大脑] 📊 解析成功 → goal='{decision.goal}' | target_id='{decision.goal_target_id}' | arrival_op='{decision.goal_arrival_command?.op}'</color>");  // ← 只加这一行
+
+        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 💬 收到的AI原始回复内容如下：\n{rawResponse}");
+
+        // ==================== 原有逻辑保持不变 ====================
         string currentHeld = (actuator != null && actuator.CurrentGrabbedObject != null) ? actuator.CurrentGrabbedObject.name : "手无寸铁";
 
-        // 场景1：发送时手中无物，但在等待网络期间小脑已经代为抢到了武器（如木棍）
         if (snapshotHeld == "手无寸铁" && currentHeld != "手无寸铁")
         {
-            Debug.LogWarning($"[{GetCurrentTimestamp()}] [大脑] ⚠️ 时空错位拦截：网络延迟期间，小脑已成功获取武器【{currentHeld}】！丢弃过期的旧动作命令。");
+            Debug.LogWarning($"[{GetCurrentTimestamp()}] [大脑] ⚠️ 时空错位拦截：网络延迟期间，小脑已成功获取武器【{currentHeld}】！");
             isThinking = false;
             return;
         }
 
-        // 场景2：如果决策的目标对应的物体，在当前场景感知中由于消亡、隐藏或已被抓取而导致不复存在/或者其类型彻底发生改变
         if (!string.IsNullOrEmpty(decision.goal_target_id) && radar != null)
         {
-            // 通过简单的字符串检索或者检查最新雷达数据，判定目标物体是否已经在物理世界死掉/不存在
             string currentRadarJson = radar.ScanEnvironmentToSemanticJson();
-            if (!currentRadarJson.Contains($"\"unique_id\": \"{decision.goal_target_id}\""))
+            if (!currentRadarJson.Contains($"\"object_id\": \"{decision.goal_target_id}\""))
             {
-                Debug.LogWarning($"[{GetCurrentTimestamp()}] [大脑] ⚠️ 时空错位拦截：目标物体【{decision.goal_target_id}】在物理场景中已不复存在（或已死/已被捡起）！拒绝执行残留动作。");
+                Debug.LogWarning($"[{GetCurrentTimestamp()}] [大脑] ⚠️ 目标物体【{decision.goal_target_id}】已不存在！");
                 isThinking = false;
                 return;
             }
         }
 
-        // 1. 处理大脑即时动作（例如当下的物理微调、闪避力、内心独白显示）
         if (monologueDisplay != null)
             monologueDisplay.text = decision.monologue;
 
@@ -148,14 +146,16 @@ public class AIBrainController : MonoBehaviour
             }
         }
 
-        // 2. 核心架构对齐：解耦硬编码，把战略目标和托管原语通通打包给小脑
         currentGoal = string.IsNullOrEmpty(decision.goal) ? "无" : decision.goal;
 
-        if (smallBrain != null)
+        if (smallBrain != null && !string.IsNullOrEmpty(decision.goal_target_id))
         {
-            // 🌟 核心点：将目标描述、目标ID、以及大脑托管的“临门一脚动作”一起传给小脑
-            // 注意：这里需要确保你的 LocalMotorController.SetNewGoal 方法签名已修改为接收这三个参数
+            Debug.Log($"<color=orange>[大脑] 🎯 已成功下发目标给小脑 → 【{currentGoal}】 | ID={decision.goal_target_id}</color>");  // ← 只加这一行
             smallBrain.SetNewGoal(currentGoal, decision.goal_target_id, decision.goal_arrival_command);
+        }
+        else if (smallBrain == null)
+        {
+            Debug.LogError("<color=red>[大脑] ❌ smallBrain (LocalMotorController) 组件未找到！</color>");
         }
 
         Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 🎯 决策新目标 → 【{currentGoal}】 | 托管动作: {(decision.goal_arrival_command != null ? decision.goal_arrival_command.op : "无")}");
@@ -170,7 +170,6 @@ public class AIBrainController : MonoBehaviour
 
     private AIPhysicsDecision ParseBrainResponse(string rawText)
     {
-        // 提取JSON（保持你原来的正则或简单处理）
         int start = rawText.IndexOf("{");
         int end = rawText.LastIndexOf("}") + 1;
         if (start >= 0 && end > start)
@@ -189,7 +188,6 @@ public class AIBrainController : MonoBehaviour
             TimeManager.Instance.OnAITick -= OnPhysicsBrainTick;
     }
 
-    // 供小脑调用
     public void RequestImmediateThink()
     {
         if (!isThinking) OnPhysicsBrainTick();
@@ -199,7 +197,6 @@ public class AIBrainController : MonoBehaviour
     {
         currentGoal = "无";
 
-        // 🌟 加强健壮性：先检查小脑组件是否存在，再进行清理
         if (smallBrain != null)
         {
             smallBrain.InterruptAndClearGoal();
@@ -211,6 +208,6 @@ public class AIBrainController : MonoBehaviour
         }
 
         isThinking = false;
-        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] ⚠️ 外部重置信号触发：已强制中断当前思考并格式化所有战略意图。");
+        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] ⚠️ 外部重置信号触发");
     }
 }

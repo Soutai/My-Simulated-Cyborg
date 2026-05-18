@@ -66,6 +66,12 @@ public class LocalMotorController : MonoBehaviour
         {
             Debug.Log($"<color=green>[小脑] ✨ 已顺利护送肉身抵达目标 【{currentGoalTargetId}】 周边 {dist:F2} 米处！</color>");
 
+            // 🌟 核心修复（病灶 2）：在释放临门一脚动作前，小脑主动踩死刹车，消除高频残留推力对抓取挂载造成的撕裂和受伤
+            if (actuator != null)
+            {
+                actuator.StopAllPhysicalMovement();
+            }
+
             // 执行大脑托付的临门一脚动作
             if (arrivalCommand != null && !string.IsNullOrEmpty(arrivalCommand.op))
             {

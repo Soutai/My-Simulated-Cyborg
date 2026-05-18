@@ -24,8 +24,8 @@ public class PerceptionRadar : MonoBehaviour
         {
             if (col.gameObject == this.gameObject) continue;
 
-            // 🌟【核心修复】：如果这个物体正被自己抓在手里，它已属于自我躯壳的一部分，不再作为“外界环境”干扰大脑认知
-            if (actuator != null && col.gameObject == actuator.CurrentGrabbedObject)
+            // 🌟【双手清洗屏障】：如果这个物体正被自己的左手或右手抓着，它已属于自我躯壳的延伸，直接跳过，防止产生认知死循环！
+            if (actuator != null && (col.gameObject == actuator.LeftHandObject || col.gameObject == actuator.RightHandObject))
                 continue;
 
             // 获取挂载在物体身上的语义化组件
@@ -38,15 +38,17 @@ public class PerceptionRadar : MonoBehaviour
                 // 计算三维空间相对坐标偏移 (以原始人为坐标原点 0,0,0)
                 Vector3 relativePos = col.transform.position - transform.position;
 
-                // 直接向物体伸手要它自身的机制描述
+                // 统一映射转换名字
+                string typeString = "Unknown";
+                if (semanticObj.semanticType == SemanticType.Food) typeString = "Food";
+                else if (semanticObj.semanticType == SemanticType.Weapon) typeString = "Weapon";
+                else if (semanticObj.semanticType == SemanticType.Enemy) typeString = "Enemy";
+
+                // 动态获取绝对配置中心对该物体的机制语义化解释
                 string dynamicMechanismRules = semanticObj.MechanismDescription;
 
-                // 将强类型枚举转换为大模型需要的字符串（如 "Food"、"Weapon"）
-                string typeString = semanticObj.semanticType.ToString();
-
-                // 使用正确的 \" 来在 C# 字符串中转义生成 JSON 的双引号
                 sb.Append("  {\n");
-                sb.Append($"    \"unique_id\": \"{col.gameObject.name}\",\n");
+                sb.Append($"    \"object_id\": \"{col.gameObject.name}\",\n");
                 sb.Append($"    \"type\": \"{typeString}\",\n");
                 sb.Append("    \"relative_position_offset\": {\n");
                 sb.Append($"      \"relative_x\": {relativePos.x:F2},\n");
@@ -73,15 +75,15 @@ public class PerceptionRadar : MonoBehaviour
         // 2. 🌟 还原你记忆中的“三个坐标轴黄圈”的硬核层次感
 #if UNITY_EDITOR
         // 稍微加深线框颜色使其更清晰
-        UnityEditor.Handles.color = new Color(1f, 0.85f, 0f, 0.6f);
+        UnityEditor.Handles.color = new Color(1f, 0.92f, 0.016f, 0.4f);
 
-        // XZ 平面 (水平面圈)
+        // 绘制水平面 (X-Z) 的雷达扫描圈
         UnityEditor.Handles.DrawWireDisc(transform.position, Vector3.up, perceptionRadius);
 
-        // XY 平面 (垂直前后圈)
+        // 绘制纵切面面 (X-Y) 的垂直参考圈
         UnityEditor.Handles.DrawWireDisc(transform.position, Vector3.forward, perceptionRadius);
 
-        // YZ 平面 (垂直左右圈)
+        // 绘制纵切面面 (Y-Z) 的侧视参考圈
         UnityEditor.Handles.DrawWireDisc(transform.position, Vector3.right, perceptionRadius);
 #endif
     }

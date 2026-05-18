@@ -1,59 +1,67 @@
 using UnityEngine;
+
 public class PromptManager : MonoBehaviour
 {
+    // 🌟【精准修复版】：既保留了双手独立持物，又完美还原了底层物理推力的坐标控制参数！
     public string GeneratePhysicsEnginePrompt(
         float satiety,
         string personality,
         string currentTimeStr,
         string serializedRadarJson,
-        string currentGrabbedItem,
+        string leftHandItem,
+        string rightHandItem,
         string currentGoal = "无")
     {
+        // 确保空状态有文字描述
+        string leftItemStr = string.IsNullOrEmpty(leftHandItem) ? "空无一物" : leftHandItem;
+        string rightItemStr = string.IsNullOrEmpty(rightHandItem) ? "空无一物" : rightHandItem;
+
         string prompt =
             $"# 具身智能物理沙盒任务控制台\n" +
             $"系统时间: {currentTimeStr} | 饱食度: {satiety:F1}/100 | 性格: {personality}\n\n" +
-            $"🌟 当前持物: {currentGrabbedItem}\n" +
+            $"🌟 左手持物: {leftItemStr}\n" +
+            $"🌟 右手持物: {rightItemStr}\n" +
             $"🎯 当前主要目标: {currentGoal}\n\n" +
 
-            "## 1. 原子物理原语（必须严格遵守坐标系）\n" +
-            "- APPLY_FORCE: arg_x >0=右, <0=左 | arg_z >0=前, <0=后 (力度建议-4.0~4.0)\n" +
-            "- GRAB / RELEASE / USE_ITEM\n\n" +
+            "## 1. 原子物理原语（必须严格遵守坐标系与参数说明）\n" +
+            "- APPLY_FORCE: 必须提供数值参数 arg_x 和 arg_z！规定：arg_x >0=向右推, <0=向左推 | arg_z >0=向前推, <0=向后推 (单次力度建议 -4.0 到 4.0 之间)\n" +
+            "- GRAB / RELEASE / USE_ITEM: 执行这三个动作时，必须在指令中包含 \"hand\" 字段，指定操作是 \"Left\" 还是 \"Right\"！\n\n" +
 
             "## 2. 当前感知\n" + serializedRadarJson + "\n\n" +
 
-            "## 3. 核心行为准则（大小脑协作与控制流托管）\n" +
+            "## 3. 核心行为准则（双手协同协作与控制流托管）\n" +
             "- 你是大脑，负责制定持久目标（goal）和当下的即时物理原语操作。\n" +
             "- 除非出现更高优先级危险（狼极近、饱食度很低），否则要坚持当前目标。\n" +
-            "- 【重要：目标动作托管机制】当你指定了一个需要移动贴近的长期目标物体（goal_target_id）时，你必须在 `goal_arrival_command` 字段中，" +
-            "明确指定当肉身被小脑成功护送到该目标物体身边时，应该由小脑代为触发的“临门一脚”原子物理原语。小脑本身没有常识，完全听从你的原语托管。\n" +
-            "- 【语言限制】输出 JSON 时，其中的 'goal' 字段和 'monologue' 字段的内容必须完全使用【简体中文】。\n\n" +
+            "- 小脑具有导航托管机制。当你下发长期目标（goal）和目标ID（goal_target_id）时，小脑会自动物理驱动肉身逼近目标。抵达后，小脑会自动释放你在 `goal_arrival_command` 中托付的临门一脚动作。\n" +
+            "- 🌟【双手独立持物机制】：你拥有两只手，可以右手握着武器保持防卫，同时用空着的左手去捡起并使用其他物品（如食物），无需丢弃武器。\n" +
+            "- 🌟【两段式物理进食】：你无法直接吃掉地上的水果。正确做法是：1. 发现某只手空闲，下发长期目标去 GRAB 水果，并指定该手（如 \"hand\": \"Left\"）；2. 当该水果成功进入你手中后，在下一轮决策里，对拿着水果的那只手发布 USE_ITEM 即可塞入嘴中消化。\n\n" +
 
-            "## 4. 托管示例决策参考\n" +
-            "- 如果你想去捡起木棍：\n" +
-            "  \"goal\": \"获取最近的武器以自卫\", \"goal_target_id\": \"Stick_1\", \"goal_arrival_command\": { \"op\": \"GRAB\", \"target_id\": \"Stick_1\" }\n" +
-            "- 如果你想去吃某个水果：\n" +
-            "  \"goal\": \"进食以恢复饱食度\", \"goal_target_id\": \"Fruit_3\", \"goal_arrival_command\": { \"op\": \"USE_ITEM\" }\n" +
-            "- 如果你想拿着武器去打狼：\n" +
-            "  \"goal\": \"驱赶附近的狼以确保安全\", \"goal_target_id\": \"Wolf_1\", \"goal_arrival_command\": { \"op\": \"USE_ITEM\" }\n" +
-            "- 如果你当前只是在避险或者没有长期目标（小脑不需要导航）：\n" +
-            "  \"goal\": \"无\", \"goal_target_id\": \"\", \"goal_arrival_command\": null\n\n" +
+            "## 4. 托管示例决策参考（双手协同版）\n" +
+            "- 如果你想去捡起木棍（当前双手空闲，准备用右手拿）：\n" +
+            "  \"goal\": \"获取最近的武器以自卫\", \"goal_target_id\": \"Stick_1\", \"goal_arrival_command\": { \"op\": \"GRAB\", \"hand\": \"Right\", \"target_id\": \"Stick_1\" }\n" +
+            "- 如果你想去吃某个水果（当前右手拿着木棍，左手空闲）：\n" +
+            "  大脑无需丢弃武器，直接指定让左手去抓取水果：\n" +
+            "  \"goal\": \"用左手去抓取水果进食\", \"goal_target_id\": \"Fruit_3\", \"goal_arrival_command\": { \"op\": \"GRAB\", \"hand\": \"Left\", \"target_id\": \"Fruit_3\" }\n" +
+            "- 如果水果已经顺利抓在左手上了（🌟 左手持物: Fruit_3，右手拿着木棍）：\n" +
+            "  大脑应当发出立即执行指令，指定使用左手物品进食，右手的木棍保持不动：\n" +
+            "  {{ \"monologue\": \"水果已在左手，我现在让左手执行 USE_ITEM 吃掉它。\", \"primitive_commands\": [{{ \"op\": \"USE_ITEM\", \"hand\": \"Left\" }}], \"goal\": \"无\", \"goal_target_id\": \"\", \"goal_arrival_command\": null }}\n" +
+            "- 如果你想拿着右手的武器去打狼：\n" +
+            "  \"goal\": \"驱赶附近的狼以确保安全\", \"goal_target_id\": \"Wolf_1\", \"goal_arrival_command\": { \"op\": \"USE_ITEM\", \"hand\": \"Right\" }\n" +
+            "- 如果你当前只是在避险或者没有长期目标（需要大脑自己实时输出推力控位走线）：\n" +
+            "  {{ \"monologue\": \"目前安全，我需要往右前方稍微移动一下观察环境。\", \"primitive_commands\": [{{ \"op\": \"APPLY_FORCE\", \"arg_x\": 2.0, \"arg_z\": 1.5, \"target_id\": \"\", \"hand\": \"\" }}], \"goal\": \"无\", \"goal_target_id\": \"\", \"goal_arrival_command\": null }}\n\n" +
 
             "## 5. 绝对限制 JSON 响应格式\n" +
-            "必须严格返回标准的 JSON 格式块，不要包含任何 markdown 解释。格式如下：\n" +
+            "必须严格返回标准的 JSON 格式块，不要包含任何 markdown 解释。在涉及到 GRAB/RELEASE/USE_ITEM 时必须包含 \"hand\" 字段。在涉及到 GRAB/RELEASE/USE_ITEM 的命令时，参数 \"hand\" 必须严格输出为 \"Left\" 或 \"Right\"，严禁留空或使用其他拼写。\n" +
+            "格式如下：\n" +
             "{\n" +
             "  \"monologue\": \"思考过程（中文）...\",\n" +
             "  \"primitive_commands\": [\n" +
-            "    { \"op\": \"APPLY_FORCE\", \"arg_x\": 0.5, \"arg_z\": -1.2 }\n" +
+            "    { \"op\": \"APPLY_FORCE\", \"arg_x\": 0.5, \"arg_z\": -0.2, \"target_id\": \"\", \"hand\": \"\" }\n" +
             "  ],\n" +
-            "  \"goal\": \"当前或新目标描述（中文）\",\n" +
-            "  \"goal_target_id\": \"目标物体的 unique_id，没有则填空字符串\",\n" +
-            "  \"goal_arrival_command\": {\n" +
-            "    \"op\": \"到达目标时执行的操作码(GRAB/USE_ITEM/RELEASE等)，若无目标则整个对象填 null\",\n" +
-            "    \"arg_x\": 0,\n" +
-            "    \"arg_z\": 0,\n" +
-            "    \"target_id\": \"对应操作的目标ID（如GRAB时需要）\"\n" +
-            "  }\n" +
-            "}";
+            "  \"goal\": \"持久目标描述\",\n" +
+            "  \"goal_target_id\": \"目标物体ID\",\n" +
+            "  \"goal_arrival_command\": { \"op\": \"GRAB\", \"hand\": \"Left\", \"target_id\": \"Fruit_3\" }\n" +
+            "}\n";
 
         return prompt;
     }
