@@ -83,6 +83,9 @@ public class AIBrainController : MonoBehaviour
 
         Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 📤 发送Prompt给Gemini");
 
+        // ======= 🛠️ 新增：在控制台打印发送给 AI 的完整 Prompt =======
+        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 📄 发送给AI的完整Prompt内容如下：\n{fullPrompt}");
+
         httpClient.PostPrompt(fullPrompt, OnAIResponseReceived, OnAIRequestFailed);
 
         yield break;
@@ -92,6 +95,9 @@ public class AIBrainController : MonoBehaviour
     private void OnAIResponseReceived(string rawResponse)
     {
         Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 📥 收到AI回复");
+
+        // ======= 🛠️ 新增：在控制台打印收到的完整 AI 原始回复 =======
+        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 💬 收到的AI原始回复内容如下：\n{rawResponse}");
 
         AIPhysicsDecision decision = ParseBrainResponse(rawResponse);
         if (decision == null)
