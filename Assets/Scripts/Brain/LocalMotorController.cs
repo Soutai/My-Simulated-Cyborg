@@ -159,4 +159,10 @@ public class LocalMotorController : MonoBehaviour
         arrivalCommand = null;
         if (actuator != null) actuator.StopAllPhysicalMovement();
     }
+
+    // 🌟 新增：判断当前是否还有计划步骤
+    public bool IsPlanEmpty()
+    {
+        return currentPlanSteps == null || currentPlanSteps.Count == 0 || currentStepIndex >= currentPlanSteps.Count;
+    }
 }

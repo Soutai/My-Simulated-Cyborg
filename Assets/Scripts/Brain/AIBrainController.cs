@@ -85,8 +85,18 @@ public class AIBrainController : MonoBehaviour
 
     private void HandleGrabSuccess(GameObject grabbedObj, string hand)
     {
-        Debug.Log($"<color=lime>[大脑] 🎉 侦测到 {hand}手 抓取成功 → {grabbedObj.name}，立即唤醒决策</color>");
-        RequestImmediateThink();
+        Debug.Log($"<color=lime>[大脑] 🎉 抓取成功 → {grabbedObj.name}，检查是否需要重新思考...</color>");
+
+        // 🌟 关键优化：只有在当前没有正在执行的多步计划时，才请求新思考
+        if (smallBrain != null && smallBrain.IsPlanEmpty())
+        {
+            Debug.Log("<color=lime>[大脑] 📍 当前计划已完成，请求大脑重新思考</color>");
+            RequestImmediateThink();
+        }
+        else
+        {
+            Debug.Log("<color=cyan>[大脑] 📍 仍在执行多步计划中，无需立即重新思考</color>");
+        }
     }
 
     private void OnAIResponseReceived(string rawResponse, string snapshotHeld, string snapshotGoal)
