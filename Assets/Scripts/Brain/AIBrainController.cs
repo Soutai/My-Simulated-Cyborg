@@ -86,13 +86,18 @@ public class AIBrainController : MonoBehaviour
         // ======= 🛠️ 新增：在控制台打印发送给 AI 的完整 Prompt =======
         Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 📄 发送给AI的完整Prompt内容如下：\n{fullPrompt}");
 
-        httpClient.PostPrompt(fullPrompt, OnAIResponseReceived, OnAIRequestFailed);
+        // ==================== 🛠️ 最小修改：捕获发送网络请求瞬间的关键状态快照 ====================
+        string snapshotHeld = held;
+        string snapshotGoal = currentGoal;
+
+        httpClient.PostPrompt(fullPrompt, (response) => OnAIResponseReceived(response, snapshotHeld, snapshotGoal), OnAIRequestFailed);
 
         yield break;
     }
 
     // AIBrainController.cs 内部的方法修改
-    private void OnAIResponseReceived(string rawResponse)
+    // ==================== 🛠️ 修改方法签名：将历史快照信息传入回调 ====================
+    private void OnAIResponseReceived(string rawResponse, string snapshotHeld, string snapshotGoal)
     {
         Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 📥 收到AI回复");
 
@@ -105,6 +110,30 @@ public class AIBrainController : MonoBehaviour
             Debug.LogError($"[{GetCurrentTimestamp()}] [大脑] ❌ JSON 反序列化失败！原始数据: {rawResponse}");
             isThinking = false;
             return;
+        }
+
+        // ==================== 🛠️ 核心修复：时空一致性与质变状态校验 ====================
+        string currentHeld = (actuator != null && actuator.CurrentGrabbedObject != null) ? actuator.CurrentGrabbedObject.name : "手无寸铁";
+
+        // 场景1：发送时手中无物，但在等待网络期间小脑已经代为抢到了武器（如木棍）
+        if (snapshotHeld == "手无寸铁" && currentHeld != "手无寸铁")
+        {
+            Debug.LogWarning($"[{GetCurrentTimestamp()}] [大脑] ⚠️ 时空错位拦截：网络延迟期间，小脑已成功获取武器【{currentHeld}】！丢弃过期的旧动作命令。");
+            isThinking = false;
+            return;
+        }
+
+        // 场景2：如果决策的目标对应的物体，在当前场景感知中由于消亡、隐藏或已被抓取而导致不复存在/或者其类型彻底发生改变
+        if (!string.IsNullOrEmpty(decision.goal_target_id) && radar != null)
+        {
+            // 通过简单的字符串检索或者检查最新雷达数据，判定目标物体是否已经在物理世界死掉/不存在
+            string currentRadarJson = radar.ScanEnvironmentToSemanticJson();
+            if (!currentRadarJson.Contains($"\"unique_id\": \"{decision.goal_target_id}\""))
+            {
+                Debug.LogWarning($"[{GetCurrentTimestamp()}] [大脑] ⚠️ 时空错位拦截：目标物体【{decision.goal_target_id}】在物理场景中已不复存在（或已死/已被捡起）！拒绝执行残留动作。");
+                isThinking = false;
+                return;
+            }
         }
 
         // 1. 处理大脑即时动作（例如当下的物理微调、闪避力、内心独白显示）
