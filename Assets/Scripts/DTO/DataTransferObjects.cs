@@ -31,6 +31,8 @@ namespace EmbodiedAI.DTO
 
         // 🌟 新增：最小多步计划支持（最小改动）
         public List<PlanStep> plan_steps;
+        // 🌟 新增：持久目标（长期意图）
+        public string persistent_goal;
     }
 
     [System.Serializable]

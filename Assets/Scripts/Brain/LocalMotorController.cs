@@ -1,6 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
 using EmbodiedAI.DTO;
+using System.Linq;
 
 [RequireComponent(typeof(CharacterActuator))]
 [RequireComponent(typeof(PerceptionRadar))]
@@ -24,6 +25,9 @@ public class LocalMotorController : MonoBehaviour
     private int currentStepIndex = 0;
 
     private float lastTickTime = 0f;
+
+    private string currentPersistentGoal = "";
+    private PersistentIntent currentPersistentIntent = PersistentIntent.None;
 
     void Awake()
     {
@@ -138,6 +142,64 @@ public class LocalMotorController : MonoBehaviour
 
             if (brain != null) brain.RequestImmediateThink();
         }
+    }
+
+    // 🌟 处理持久目标（长期自主行为）
+    public void SetPersistentGoal(string goalDescription)
+    {
+        if (string.IsNullOrEmpty(goalDescription)) return;
+
+        currentPersistentGoal = goalDescription;
+
+        // 使用静态方法调用（不再需要 FindObjectOfType）
+        var strategy = SandboxProtocolConfig.GetStrategy(goalDescription);
+
+        if (strategy != null)
+        {
+            currentPersistentIntent = strategy.intentType;
+            Debug.Log($"<color=cyan>[小脑] 🌌 进入持久意图 → {strategy.intentType} ({strategy.executionHint})</color>");
+
+            switch (strategy.executionHint)
+            {
+                case "foraging_search":
+                    StartForagingSearch();
+                    break;
+                case "frontier_explore":
+                    StartFrontierExploration();
+                    break;
+                default:
+                    StartBasicWander();
+                    break;
+            }
+        }
+        else
+        {
+            Debug.LogWarning($"[小脑] 未知持久目标: {goalDescription}，使用默认探索");
+            StartBasicWander();
+        }
+    }
+
+    private void StartBasicWander()
+    {
+        Debug.Log("<color=cyan>[小脑] 开始基础探索模式</color>");
+        Vector3 dir = Random.insideUnitSphere;
+        dir.y = 0;
+        dir.Normalize();
+
+        var cmd = new PrimitiveCommand { op = "APPLY_FORCE", arg_x = dir.x * 3f, arg_z = dir.z * 3f };
+        actuator.ExecutePrimitiveSequence(new List<PrimitiveCommand> { cmd }, null);
+    }
+
+    private void StartForagingSearch()
+    {
+        Debug.Log("<color=cyan>[小脑] 开始觅食搜索模式</color>");
+        StartBasicWander();   // 后续可优化为优先找 Food
+    }
+
+    private void StartFrontierExploration()
+    {
+        Debug.Log("<color=cyan>[小脑] 开始前沿探索模式</color>");
+        StartBasicWander();
     }
 
     private void MoveTowardsTarget(Vector3 targetPos)

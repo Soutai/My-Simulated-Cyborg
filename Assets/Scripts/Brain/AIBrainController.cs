@@ -111,7 +111,7 @@ public class AIBrainController : MonoBehaviour
             return;
         }
 
-        Debug.Log($"<color=yellow>[大脑] 📊 解析成功 → goal='{decision.goal}' | plan_steps Count={decision.plan_steps?.Count ?? 0}</color>");
+        Debug.Log($"<color=yellow>[大脑] 📊 解析成功 → goal='{decision.goal}' | plan_steps={decision.plan_steps?.Count ?? 0} | persistent_goal='{decision.persistent_goal}'</color>");
 
         if (!string.IsNullOrEmpty(rawResponse))
             Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 💬 收到的AI原始回复内容如下：\n{rawResponse}");
@@ -126,23 +126,24 @@ public class AIBrainController : MonoBehaviour
             actuator?.ExecutePrimitiveSequence(decision.primitive_commands, actionDisplay);
         }
 
-        // 2. 处理多步计划（优先使用）
+        // 2. 多步短期计划（优先）
         if (decision.plan_steps != null && decision.plan_steps.Count > 0)
         {
             Debug.Log($"<color=cyan>[大脑] 📋 收到多步计划，共 {decision.plan_steps.Count} 步</color>");
-
-            if (smallBrain != null)
-            {
-                smallBrain.SetNewPlan(decision.plan_steps, decision.goal);   // ← 使用新方法
-            }
+            smallBrain?.SetNewPlan(decision.plan_steps, decision.goal);
         }
-        // 3. 兼容旧的单步模式
+        // 3. 持久目标（长期自主行为）
+        else if (!string.IsNullOrEmpty(decision.persistent_goal))
+        {
+            Debug.Log($"<color=magenta>[大脑] 🌌 收到持久目标 → {decision.persistent_goal}</color>");
+            smallBrain?.SetPersistentGoal(decision.persistent_goal);
+        }
+        // 4. 兼容旧单步模式
         else if (smallBrain != null && !string.IsNullOrEmpty(decision.goal_target_id))
         {
             string goalStr = string.IsNullOrEmpty(decision.goal) ? "无" : decision.goal;
             Debug.Log($"<color=orange>[大脑] 🎯 单步目标 → 【{goalStr}】 | ID={decision.goal_target_id}</color>");
 
-            // 构造单步计划兼容旧逻辑
             var singleStep = new List<PlanStep>
         {
             new PlanStep
@@ -157,11 +158,11 @@ public class AIBrainController : MonoBehaviour
         }
         else
         {
-            Debug.Log("<color=gray>[大脑] 当前无新计划或目标</color>");
+            Debug.Log("<color=gray>[大脑] 当前无新计划或持久目标</color>");
         }
 
         currentGoal = string.IsNullOrEmpty(decision.goal) ? "无" : decision.goal;
-        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 🎯 决策完成 → 当前计划: 【{currentGoal}】");
+        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 🎯 决策完成 → 当前计划: 【{currentGoal}】 | 持久目标: 【{decision.persistent_goal}】");
 
         isThinking = false;
     }
