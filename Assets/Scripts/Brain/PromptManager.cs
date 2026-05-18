@@ -32,9 +32,12 @@ public class PromptManager : MonoBehaviour
             "## 3. 核心行为准则（双手协同协作与控制流托管）\n" +
             "- 你是大脑，负责制定持久目标（goal）和当下的即时物理原语操作。\n" +
             "- 除非出现更高优先级危险（狼极近、饱食度很低），否则要坚持当前目标。\n" +
-            "- 小脑具有导航托管机制。当你下发长期目标（goal）和目标ID（goal_target_id）时，小脑会自动物理驱动肉身逼近目标。抵达后，小脑会自动释放你在 `goal_arrival_command` 中托付的临门一脚动作。\n" +
+            "- 小脑具有导航托管机制。当你下发长期目标（goal）和目标ID（goal_target_id）时，小脑会自动物理驱动肉身逼近目标。" +
+            "抵达后，小脑会自动释放你在 `goal_arrival_command` 中托付的临门一脚动作。\n" +
             "- 🌟【双手独立持物机制】：你拥有两只手，可以右手握着武器保持防卫，同时用空着的左手去捡起并使用其他物品（如食物），无需丢弃武器。\n" +
-            "- 🌟【两段式物理进食】：你无法直接吃掉地上的水果。正确做法是：1. 发现某只手空闲，下发长期目标去 GRAB 水果，并指定该手（如 \"hand\": \"Left\"）；2. 当该水果成功进入你手中后，在下一轮决策里，对拿着水果的那只手发布 USE_ITEM 即可塞入嘴中消化。\n\n" +
+            "- 🌟【两段式物理进食】：你无法直接吃掉地上的水果。正确做法是：" +
+            "1. 发现某只手空闲，下发长期目标去 GRAB 水果，并指定该手（如 \"hand\": \"Left\"）；" +
+            "2. 当该水果成功进入你手中后，在下一轮决策里，对拿着水果的那只手发布 USE_ITEM 即可塞入嘴中消化。\n\n" +
 
             "## 4. 托管示例决策参考（双手协同版）\n" +
             "- 如果你想去捡起木棍（当前双手空闲，准备用右手拿）：\n" +
@@ -50,8 +53,16 @@ public class PromptManager : MonoBehaviour
             "- 如果你当前只是在避险或者没有长期目标（需要大脑自己实时输出推力控位走线）：\n" +
             "  {{ \"monologue\": \"目前安全，我需要往右前方稍微移动一下观察环境。\", \"primitive_commands\": [{{ \"op\": \"APPLY_FORCE\", \"arg_x\": 2.0, \"arg_z\": 1.5, \"target_id\": \"\", \"hand\": \"\" }}], \"goal\": \"无\", \"goal_target_id\": \"\", \"goal_arrival_command\": null }}\n\n" +
 
+            "## 4.5 多步规划能力（新增）\n" +
+            "- 你拥有战略规划能力。请在一次思考中制定**连贯的多步计划**（plan_steps），让小脑可以连续执行。\n" +
+            "- 示例：先拿武器再打狼、或者先抓水果再吃掉。\n" +
+            "- plan_steps 是数组，可以包含 1~3 步。每一项包含 description、target_id、arrival_op、hand。\n" +
+            "- 小脑会自动依次执行这些步骤，无需你每步都重新思考。\n\n" +
+
+
             "## 5. 绝对限制 JSON 响应格式\n" +
-            "必须严格返回标准的 JSON 格式块，不要包含任何 markdown 解释。在涉及到 GRAB/RELEASE/USE_ITEM 时必须包含 \"hand\" 字段。在涉及到 GRAB/RELEASE/USE_ITEM 的命令时，参数 \"hand\" 必须严格输出为 \"Left\" 或 \"Right\"，严禁留空或使用其他拼写。\n" +
+            "必须严格返回标准的 JSON 格式块，不要包含任何 markdown 解释。在涉及到 GRAB/RELEASE/USE_ITEM 时必须包含 \"hand\" 字段。" +
+            "在涉及到 GRAB/RELEASE/USE_ITEM 的命令时，参数 \"hand\" 必须严格输出为 \"Left\" 或 \"Right\"，严禁留空或使用其他拼写。\n" +
             "格式如下：\n" +
             "{\n" +
             "  \"monologue\": \"思考过程（中文）...\",\n" +
@@ -61,6 +72,18 @@ public class PromptManager : MonoBehaviour
             "  \"goal\": \"持久目标描述\",\n" +
             "  \"goal_target_id\": \"目标物体ID\",\n" +
             "  \"goal_arrival_command\": { \"op\": \"GRAB\", \"hand\": \"Left\", \"target_id\": \"Fruit_3\" }\n" +
+            "}\n" +
+
+            "扩展格式示例（推荐返回 plan_steps）:\n" +
+            "{\n" +
+            "  \"monologue\": \"...\",\n" +
+            "  \"primitive_commands\": [],\n" +
+            "  \"goal\": \"消除威胁\",\n" +
+            "  \"goal_target_id\": \"\",\n" +
+            "  \"plan_steps\": [\n" +
+            "    { \"description\": \"先拾取武器\", \"target_id\": \"Stick\", \"arrival_op\": \"GRAB\", \"hand\": \"Right\" },\n" +
+            "    { \"description\": \"立即攻击狼\", \"target_id\": \"Wolf\", \"arrival_op\": \"USE_ITEM\", \"hand\": \"Right\" }\n" +
+            "  ]\n" +
             "}\n";
 
         return prompt;

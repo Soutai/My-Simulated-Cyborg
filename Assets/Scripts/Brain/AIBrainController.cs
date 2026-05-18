@@ -96,31 +96,63 @@ public class AIBrainController : MonoBehaviour
         AIPhysicsDecision decision = ParseBrainResponse(rawResponse);
         if (decision == null)
         {
-            Debug.LogError($"[{GetCurrentTimestamp()}] [大脑] ❌ JSON 解析失败");
+            Debug.LogError($"[{GetCurrentTimestamp()}] [大脑] ❌ JSON 反序列化失败！");
             isThinking = false;
             return;
         }
 
-        Debug.Log($"<color=yellow>[大脑] 📊 解析成功 → goal='{decision.goal}' | target_id='{decision.goal_target_id}' | arrival_op='{decision.goal_arrival_command?.op}'</color>");
-        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 💬 收到的AI原始回复内容如下：\n{rawResponse}");
+        Debug.Log($"<color=yellow>[大脑] 📊 解析成功 → goal='{decision.goal}' | plan_steps Count={decision.plan_steps?.Count ?? 0}</color>");
+
+        if (!string.IsNullOrEmpty(rawResponse))
+            Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 💬 收到的AI原始回复内容如下：\n{rawResponse}");
 
         if (monologueDisplay != null)
             monologueDisplay.text = decision.monologue;
 
+        // 1. 执行即时原子动作
         if (decision.primitive_commands != null && decision.primitive_commands.Count > 0)
         {
+            Debug.Log($"<color=green>[大脑] ⚡ 执行 {decision.primitive_commands.Count} 条即时原语</color>");
             actuator?.ExecutePrimitiveSequence(decision.primitive_commands, actionDisplay);
         }
 
-        currentGoal = string.IsNullOrEmpty(decision.goal) ? "无" : decision.goal;
-
-        if (smallBrain != null && !string.IsNullOrEmpty(decision.goal_target_id))
+        // 2. 处理多步计划（优先使用）
+        if (decision.plan_steps != null && decision.plan_steps.Count > 0)
         {
-            Debug.Log($"<color=orange>[大脑] 🎯 已成功下发目标给小脑 → 【{currentGoal}】 | ID={decision.goal_target_id}</color>");
-            smallBrain.SetNewGoal(currentGoal, decision.goal_target_id, decision.goal_arrival_command);
+            Debug.Log($"<color=cyan>[大脑] 📋 收到多步计划，共 {decision.plan_steps.Count} 步</color>");
+
+            if (smallBrain != null)
+            {
+                smallBrain.SetNewPlan(decision.plan_steps, decision.goal);   // ← 使用新方法
+            }
+        }
+        // 3. 兼容旧的单步模式
+        else if (smallBrain != null && !string.IsNullOrEmpty(decision.goal_target_id))
+        {
+            string goalStr = string.IsNullOrEmpty(decision.goal) ? "无" : decision.goal;
+            Debug.Log($"<color=orange>[大脑] 🎯 单步目标 → 【{goalStr}】 | ID={decision.goal_target_id}</color>");
+
+            // 构造单步计划兼容旧逻辑
+            var singleStep = new List<PlanStep>
+        {
+            new PlanStep
+            {
+                description = goalStr,
+                target_id = decision.goal_target_id,
+                arrival_op = decision.goal_arrival_command?.op ?? "GRAB",
+                hand = decision.goal_arrival_command?.hand
+            }
+        };
+            smallBrain.SetNewPlan(singleStep, goalStr);
+        }
+        else
+        {
+            Debug.Log("<color=gray>[大脑] 当前无新计划或目标</color>");
         }
 
-        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 🎯 决策新目标 → 【{currentGoal}】");
+        currentGoal = string.IsNullOrEmpty(decision.goal) ? "无" : decision.goal;
+        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 🎯 决策完成 → 当前计划: 【{currentGoal}】");
+
         isThinking = false;
     }
 

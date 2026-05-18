@@ -14,9 +14,14 @@ public class LocalMotorController : MonoBehaviour
     private PerceptionRadar radar;
     private AIBrainController brain;
 
+    // 当前正在执行的目标
     private string currentGoal = "无";
     private string currentGoalTargetId = "";
     private PrimitiveCommand arrivalCommand = null;
+
+    // 🌟 新增：多步计划队列（最小实现）
+    private List<PlanStep> currentPlanSteps = new List<PlanStep>();
+    private int currentStepIndex = 0;
 
     private float lastTickTime = 0f;
 
@@ -34,13 +39,34 @@ public class LocalMotorController : MonoBehaviour
         TickSmallBrain();
     }
 
-    public void SetNewGoal(string goalDescription, string targetId, PrimitiveCommand onArrivalCmd)
+    // 接收大脑下发的计划（单步或多步）
+    public void SetNewPlan(List<PlanStep> planSteps, string initialGoal = "")
     {
-        currentGoal = goalDescription;
-        currentGoalTargetId = targetId;
-        arrivalCommand = onArrivalCmd;
+        currentPlanSteps = planSteps ?? new List<PlanStep>();
+        currentStepIndex = 0;
 
-        Debug.Log($"<color=orange>[小脑] 🎯 接受托管目标: 【{goalDescription}】 | 目标物体: {targetId} | 到达后动作: {(onArrivalCmd != null ? onArrivalCmd.op : "无")}</color>");
+        if (currentPlanSteps.Count > 0)
+        {
+            var firstStep = currentPlanSteps[0];
+            currentGoal = firstStep.description;
+            currentGoalTargetId = firstStep.target_id;
+
+            PrimitiveCommand cmd = new PrimitiveCommand
+            {
+                op = firstStep.arrival_op ?? "GRAB",
+                hand = firstStep.hand,
+                target_id = firstStep.target_id
+            };
+
+            arrivalCommand = cmd;
+
+            Debug.Log($"<color=orange>[小脑] 📋 接收到 {currentPlanSteps.Count} 步计划 → 开始执行第1步: {firstStep.description}</color>");
+        }
+        else if (!string.IsNullOrEmpty(initialGoal))
+        {
+            // 兼容旧单步模式
+            currentGoal = initialGoal;
+        }
     }
 
     private void TickSmallBrain()
@@ -48,7 +74,12 @@ public class LocalMotorController : MonoBehaviour
         if (string.IsNullOrEmpty(currentGoalTargetId)) return;
 
         GameObject targetObj = GameObject.Find(currentGoalTargetId);
-        if (targetObj == null) return;
+        if (targetObj == null)
+        {
+            Debug.LogWarning($"[小脑] 目标 {currentGoalTargetId} 已消失");
+            NextStepOrReset();
+            return;
+        }
 
         float dist = Vector3.Distance(transform.position, targetObj.transform.position);
 
@@ -58,22 +89,54 @@ public class LocalMotorController : MonoBehaviour
         }
         else
         {
-            Debug.Log($"<color=green>[小脑] ✨ 已顺利护送肉身抵达目标 【{currentGoalTargetId}】 周边 {dist:F2} 米处！</color>");
+            Debug.Log($"<color=green>[小脑] ✨ 已抵达目标 【{currentGoalTargetId}】 {dist:F2}m</color>");
 
-            if (actuator != null)
-                actuator.StopAllPhysicalMovement();
+            if (actuator != null) actuator.StopAllPhysicalMovement();
 
             if (arrivalCommand != null && !string.IsNullOrEmpty(arrivalCommand.op))
             {
-                Debug.Log($"<color=yellow>[小脑] ⚡ 正在代为释放大脑托管的原语动作: {arrivalCommand.op}</color>");
+                Debug.Log($"<color=yellow>[小脑] ⚡ 执行到达动作: {arrivalCommand.op}</color>");
                 List<PrimitiveCommand> cmds = new List<PrimitiveCommand> { arrivalCommand };
                 actuator.ExecutePrimitiveSequence(cmds, null);
             }
 
-            // 清空目标，由 CharacterActuator 的 OnGrabSuccess 事件负责唤醒大脑
+            // 执行完当前步骤 → 推进到下一步
+            NextStepOrReset();
+        }
+    }
+
+    // 🌟 自动推进到下一步（核心）
+    private void NextStepOrReset()
+    {
+        currentStepIndex++;
+
+        if (currentStepIndex < currentPlanSteps.Count)
+        {
+            // 执行下一步
+            var nextStep = currentPlanSteps[currentStepIndex];
+            currentGoal = nextStep.description;
+            currentGoalTargetId = nextStep.target_id;
+
+            arrivalCommand = new PrimitiveCommand
+            {
+                op = nextStep.arrival_op ?? "GRAB",
+                hand = nextStep.hand,
+                target_id = nextStep.target_id
+            };
+
+            Debug.Log($"<color=cyan>[小脑] 📌 自动推进到计划第 {currentStepIndex + 1} 步 → {nextStep.description}</color>");
+        }
+        else
+        {
+            // 整个计划执行完毕
+            Debug.Log("<color=lime>[小脑] ✅ 完整计划执行完毕，请求大脑重新思考</color>");
+            currentPlanSteps.Clear();
+            currentStepIndex = 0;
             currentGoal = "无";
             currentGoalTargetId = "";
             arrivalCommand = null;
+
+            if (brain != null) brain.RequestImmediateThink();
         }
     }
 
@@ -89,10 +152,11 @@ public class LocalMotorController : MonoBehaviour
 
     public void InterruptAndClearGoal()
     {
+        currentPlanSteps.Clear();
+        currentStepIndex = 0;
         currentGoal = "无";
         currentGoalTargetId = "";
         arrivalCommand = null;
         if (actuator != null) actuator.StopAllPhysicalMovement();
-        Debug.Log("<color=red>[小脑] 🛑 中断并清空当前导航目标</color>");
     }
 }

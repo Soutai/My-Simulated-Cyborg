@@ -28,6 +28,18 @@ namespace EmbodiedAI.DTO
 
         // 🌟【大小脑协作升级】小脑护送肉身抵达后，指定由哪只手去执行临门一脚
         public PrimitiveCommand goal_arrival_command;
+
+        // 🌟 新增：最小多步计划支持（最小改动）
+        public List<PlanStep> plan_steps;
+    }
+
+    [System.Serializable]
+    public class PlanStep
+    {
+        public string description;        // 给AI自己看的描述
+        public string target_id;
+        public string arrival_op;         // "GRAB" / "USE_ITEM"
+        public string hand;
     }
 
     // Google API 规范需要的底层请求/响应外壳
