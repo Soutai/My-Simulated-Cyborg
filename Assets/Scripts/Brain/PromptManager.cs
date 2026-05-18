@@ -4,16 +4,22 @@ public class PromptManager : MonoBehaviour
 {
     // 🌟【精准修复版】：既保留了双手独立持物，又完美还原了底层物理推力的坐标控制参数！
     public string GeneratePhysicsEnginePrompt(
-    float satiety,
-    string personality,
-    string currentTimeStr,
-    string serializedRadarJson,
-    string leftHandItem,
-    string rightHandItem,
-    string currentGoal = "无")
+        float satiety,
+        string personality,
+        string currentTimeStr,
+        string serializedRadarJson,
+        string leftHandItem,
+        string rightHandItem,
+        string currentGoal = "无")
     {
         string leftItemStr = string.IsNullOrEmpty(leftHandItem) ? "空无一物" : leftHandItem;
         string rightItemStr = string.IsNullOrEmpty(rightHandItem) ? "空无一物" : rightHandItem;
+
+        // 获取行为指导
+        string behaviorGuidance = SandboxProtocolConfig.GetAllBehaviorGuidance();
+
+        // 【新增调试】确认内容是否正常生成
+        Debug.Log($"[PromptManager] behaviorGuidance 长度: {behaviorGuidance.Length} 字符");
 
         string prompt =
             $"# 具身智能物理沙盒任务控制台\n" +
@@ -36,8 +42,9 @@ public class PromptManager : MonoBehaviour
             "- 🌟【两段式物理进食】：你无法直接吃掉地上的水果。正确做法是：1. 发现某只手空闲，下发长期目标去 GRAB 水果，并指定该手（如 \"hand\": \"Left\"）；2. 当该水果成功进入你手中后，在下一轮决策里，对拿着水果的那只手发布 USE_ITEM 即可塞入嘴中消化。\n\n" +
 
             "## 4.5 多步规划能力（强烈推荐）\n" +
-            "- 你拥有优秀的战略规划能力。请**每次思考时都制定2~3步连贯的行动计划**（plan_steps），让小脑可以连续高效执行。\n" +
-            "- 允许合理的「储备」行为：例如先拿食物作为储备，之后再决定是否吃掉。这属于聪明且现实的生存策略。\n" +
+            "- 你拥有优秀的战略规划能力。**在大多数情况下，请每次思考时都制定2~4步连贯的行动计划**（plan_steps），让小脑可以连续执行而无需频繁请求我思考。\n" +
+            "- 每个步骤都应该有明确的目标和动作。\n" +
+            "- 允许合理的「储备」行为：例如先拿食物作为储备，之后再决定是否吃掉。\n\n" +
             "- 优秀示例：\n" +
             "  - 先拾取武器 → 再攻击威胁\n" +
             "  - 先抓取食物作为储备 → 后续视饱食度决定是否吃掉\n" +
@@ -46,13 +53,13 @@ public class PromptManager : MonoBehaviour
             "- 只有当整个计划全部执行完毕、或出现新的高优先级威胁、或饱食度过低时，才需要我重新决策。\n\n" +
 
             "## 4.6 持久目标能力（长期自主行为）\n" +
-            "- 当你需要进行长时间、无法用几步计划完成的行为时，**必须使用 `persistent_goal` 字段**启动长期模式。\n" +
-            "- 示例：\n" +
-            "  - \"长期寻找食物\"（会持续探索直到找到食物）\n" +
-            "  - \"区域警戒探索\"（持续巡逻、扩大视野、寻找潜在威胁）\n" +
-            "  - \"扩大安全范围\"\n" +
-            "- 小脑会根据 SandboxProtocolConfig 的机制理解你的意图，并**持续执行**该目标，直到你给出新指令或出现更高优先级事件。\n" +
-            "- **重要**：短期明确动作用 `plan_steps`，长期持续行为**必须**用 `persistent_goal`。\n\n" +
+            "- 当你需要进行长时间行为（探索、警戒、觅食等）时，**优先考虑使用 `persistent_goal` + 多步 plan_steps 的组合**。\n" +
+            "- SandboxProtocolConfig 中定义的行为策略如下：\n" +
+            behaviorGuidance + "\n" +
+            "- **在持久目标模式下，你必须主动规划多个有意义的移动步骤**（建议2~4步），每个步骤使用力度足够的 APPLY_FORCE（arg_x 和 arg_z 绝对值总和建议 2.5~4.0），让单次移动有明显距离（5-12米以上）。\n" +
+            "- 避免输出单个小力度的 APPLY_FORCE，这会导致原地抽搐般的低效移动。\n" +
+            "- 请在 monologue 中说明你的整体计划和每个步骤的理由。\n" +
+            "- **重要**：短期明确动作用 `plan_steps`，长期持续行为推荐使用 `persistent_goal` + 多步 `plan_steps` 的方式。\n\n" +
 
             "## 5. 绝对限制 JSON 响应格式\n" +
             "必须严格返回标准的 JSON 格式块，不要包含任何 markdown 解释。在涉及到 GRAB/RELEASE/USE_ITEM 时必须包含 \"hand\" 字段。在涉及到 GRAB/RELEASE/USE_ITEM 的命令时，参数 \"hand\" 必须严格输出为 \"Left\" 或 \"Right\"，严禁留空或使用其他拼写。\n" +
@@ -66,7 +73,7 @@ public class PromptManager : MonoBehaviour
             "  \"goal_target_id\": \"目标物体ID\",\n" +
             "  \"goal_arrival_command\": { \"op\": \"GRAB\", \"hand\": \"Left\", \"target_id\": \"Fruit_3\" },\n" +
             "  \"plan_steps\": [],\n" +
-            "  \"persistent_goal\": \"长期寻找食物\"   // ← 长期行为时使用\n" +
+            "  \"persistent_goal\": \"区域警戒探索\"   // ← 长期行为时使用\n" +
             "}\n\n" +
 
             "扩展格式示例（推荐返回 plan_steps 或 persistent_goal）:\n" +
@@ -79,6 +86,19 @@ public class PromptManager : MonoBehaviour
             "    { \"description\": \"先拾取武器\", \"target_id\": \"Stick\", \"arrival_op\": \"GRAB\", \"hand\": \"Right\" },\n" +
             "    { \"description\": \"立即攻击狼\", \"target_id\": \"Wolf\", \"arrival_op\": \"USE_ITEM\", \"hand\": \"Right\" }\n" +
             "  ]\n" +
+            "}\n" +
+
+            "持久探索示例：\n" +
+            "{\n" +
+            "  \"monologue\": \"...\",\n" +
+            "  \"primitive_commands\": [],\n" +
+            "  \"goal\": \"区域警戒探索\",\n" +
+            "  \"goal_target_id\": \"\",\n" +
+            "  \"plan_steps\": [\n" +
+            "    { \"description\": \"向东北前方未知区域移动\", \"target_id\": \"\", \"arrival_op\": \"\", \"hand\": \"\" },\n" +
+            "    { \"description\": \"继续向东偏北方向探索\", \"target_id\": \"\", \"arrival_op\": \"\", \"hand\": \"\" }\n" +
+            "  ],\n" +
+            "  \"persistent_goal\": \"区域警戒探索\"\n" +
             "}\n";
 
         return prompt;
