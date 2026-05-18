@@ -13,15 +13,18 @@ public class CharacterActuator : MonoBehaviour
 
     private Rigidbody rb;
 
-    // 🌟【双手升级】将单手转换为独立的左右手持物变量
+    // 🌟【双手升级】
     private GameObject leftHandObject = null;
     private GameObject rightHandObject = null;
     private bool isExecuting = false;
 
-    // 🌟【安全公开接口】供外部雷达清洗和状态查询使用
+    // 🌟 新增：抓取成功事件（事件驱动，零延迟唤醒大脑）
+    public event System.Action<GameObject, string> OnGrabSuccess;
+
+    // 公开接口
     public GameObject LeftHandObject => leftHandObject;
     public GameObject RightHandObject => rightHandObject;
-    public GameObject CurrentGrabbedObject => rightHandObject ?? leftHandObject; // 向下兼容旧逻辑
+    public GameObject CurrentGrabbedObject => rightHandObject ?? leftHandObject;
 
     void Awake()
     {
@@ -41,7 +44,6 @@ public class CharacterActuator : MonoBehaviour
     public void ExecutePrimitiveSequence(List<PrimitiveCommand> commands, UnityEngine.UI.Text actionDisplay)
     {
         if (commands == null || commands.Count == 0) return;
-
         StopAllPhysicalMovement();
         StartCoroutine(SequenceRoutine(commands, actionDisplay));
     }
@@ -49,23 +51,10 @@ public class CharacterActuator : MonoBehaviour
     private IEnumerator SequenceRoutine(List<PrimitiveCommand> commands, UnityEngine.UI.Text actionDisplay)
     {
         isExecuting = true;
-
         foreach (var cmd in commands)
         {
-            // 1. 极致安全防线：同时过滤 cmd 为空 以及 cmd.op 为空的情况
-            if (cmd == null || string.IsNullOrEmpty(cmd.op))
-            {
-                Debug.LogWarning("[物理原语] 过滤掉了一个空的命令或无效的操作名(op 为空)。");
-                continue;
-            }
+            if (cmd == null || string.IsNullOrEmpty(cmd.op)) continue;
             if (!isExecuting) yield break;
-
-            try
-            {
-                if (actionDisplay != null)
-                    actionDisplay.text = $"正在执行: {cmd.op}";
-            }
-            catch { }
 
             string opType = cmd.op.ToUpper().Trim();
             // 🌟 获取当前命令指定的手，默认归为右手
@@ -76,43 +65,26 @@ public class CharacterActuator : MonoBehaviour
                 case "APPLY_FORCE":
                     yield return StartCoroutine(ApplyForceSafe(cmd.arg_x, cmd.arg_z));
                     break;
-
                 case "GRAB":
                     // 🌟 路由到双手安全的抓取逻辑
                     yield return StartCoroutine(PerformGrab(cmd.target_id, TargetHand));
                     break;
-
                 case "RELEASE":
                     // 🌟 路由到双手安全的释放逻辑
                     PerformRelease(TargetHand);
                     yield return new WaitForSeconds(0.2f);
                     break;
-
                 case "USE_ITEM":
                     // 🌟 传入指定的手，精准触发该手持物的对应逻辑
                     TriggerUseLogic(TargetHand);
                     yield return new WaitForSeconds(0.4f);
                     break;
-
-                default:
-                    Debug.LogWarning($"[物理原语] 未知的操作命令: {opType}");
-                    break;
             }
-
             StabilizeMovement();
         }
-
-        try
-        {
-            if (actionDisplay != null)
-                actionDisplay.text = "原子序列执行完毕";
-        }
-        catch { }
-
         isExecuting = false;
     }
 
-    // ==================== 核心修复：安全的推力实现（100%保留原逻辑） ====================
     private IEnumerator ApplyForceSafe(float argX, float argZ)
     {
         Vector3 direction = new Vector3(argX, 0f, argZ).normalized;
@@ -142,7 +114,6 @@ public class CharacterActuator : MonoBehaviour
     {
         Vector3 vel = rb.linearVelocity;
         Vector3 horizontalVel = new Vector3(vel.x, 0, vel.z);
-
         if (horizontalVel.magnitude > maxHorizontalSpeed)
         {
             Vector3 limitedVel = horizontalVel.normalized * maxHorizontalSpeed;
@@ -166,7 +137,7 @@ public class CharacterActuator : MonoBehaviour
 
         if (activeObject != null && activeObject.name.Contains("Stick"))
         {
-            Debug.Log($"<color=yellow>[物理交互] 原始人挥舞了【{sanitizedHand}手】的木棍！</color>");
+            Debug.Log($"<color=yellow>[物理交互] 挥舞【{sanitizedHand}手】木棍！</color>");
             Collider[] hits = Physics.OverlapSphere(transform.position + transform.forward * 1f, 2f);
             foreach (var h in hits)
             {
@@ -186,18 +157,15 @@ public class CharacterActuator : MonoBehaviour
         {
             if (col.CompareTag("Food"))
             {
-                // 🌟 额外安全防线：如果要吃的果子正好就是手里的这个，或者是地上的同类果子，都允许触发
                 NPCAttributes attr = GetComponent<NPCAttributes>();
                 if (attr) attr.satiety = Mathf.Clamp(attr.satiety + 15f, 0f, 100f);
-                Debug.Log($"<color=green>[物理交互] 🍎 消耗了【{sanitizedHand}手】附近的果子进食！</color>");
+                Debug.Log($"<color=green>[物理交互] 🍎 用【{sanitizedHand}手】吃掉果子！</color>");
 
-                // 如果刚好把手里拿着的这个果子吃了，清空对应手的引用
                 if (col.gameObject == activeObject)
                 {
                     if (sanitizedHand == "LEFT") leftHandObject = null;
                     else rightHandObject = null;
                 }
-
                 Destroy(col.gameObject);
                 break;
             }
@@ -206,7 +174,6 @@ public class CharacterActuator : MonoBehaviour
 
     private void PerformRelease(string hand)
     {
-        // 🌟 修正：确保传入的参数做大写鲁棒性处理
         string sanitizedHand = (hand ?? "").ToUpper().Trim();
         GameObject activeObject = (sanitizedHand == "LEFT") ? leftHandObject : rightHandObject;
 
@@ -217,7 +184,8 @@ public class CharacterActuator : MonoBehaviour
                 targetRb.isKinematic = false;
 
             activeObject.transform.SetParent(null);
-            Debug.Log($"<color=cyan>[物理原语] 松开了【{sanitizedHand}手】的物体: {activeObject.name}</color>");
+
+            Debug.Log($"<color=cyan>[物理原语] 松开【{sanitizedHand}手】物体: {activeObject.name}</color>");
 
             if (sanitizedHand == "LEFT") leftHandObject = null;
             else rightHandObject = null;
@@ -226,28 +194,17 @@ public class CharacterActuator : MonoBehaviour
 
     private IEnumerator PerformGrab(string targetId, string hand)
     {
-        if (string.IsNullOrEmpty(targetId))
-        {
-            yield return new WaitForSeconds(0.1f);
-            yield break;
-        }
+        if (string.IsNullOrEmpty(targetId)) yield break;
 
-        // 🌟 修正：确保传入的参数做大写鲁棒性处理
         string sanitizedHand = (hand ?? "").ToUpper().Trim();
-
-        // 检查该手是否已经持物，若有则不允许覆盖抓取（必须先 RELEASE）
         GameObject activeObject = (sanitizedHand == "LEFT") ? leftHandObject : rightHandObject;
         if (activeObject != null)
         {
-            Debug.LogWarning($"[物理原语] GRAB 失败：【{sanitizedHand}手】已经持有物体 {activeObject.name}");
-            yield return new WaitForSeconds(0.1f);
+            Debug.LogWarning($"[物理原语] GRAB 失败：【{sanitizedHand}手】已有物体");
             yield break;
         }
 
-        // 优先精确查找
         GameObject target = GameObject.Find(targetId);
-
-        // 如果找不到，尝试模糊查找
         if (target == null)
         {
             var semanticObjs = FindObjectsOfType<SemanticObject>();
@@ -263,14 +220,12 @@ public class CharacterActuator : MonoBehaviour
 
         if (target != null && Vector3.Distance(transform.position, target.transform.position) <= 3.5f)
         {
-            // 🌟 检查目标是否已经被另一只手抓住了，防止“双手互抢一个物体”导致物理冲突
             if (target == leftHandObject || target == rightHandObject)
             {
-                Debug.LogWarning($"[物理原语] GRAB 失败：目标 {targetId} 已被另一只手抓取。");
+                Debug.LogWarning($"[物理原语] GRAB 失败：目标已被另一只手持有");
                 yield break;
             }
 
-            // 赋值给对应的手
             if (sanitizedHand == "LEFT") leftHandObject = target;
             else rightHandObject = target;
 
@@ -281,19 +236,18 @@ public class CharacterActuator : MonoBehaviour
             if (targetRb != null) targetRb.isKinematic = true;
 
             target.transform.SetParent(transform);
-
-            // 🌟【双手视觉挂载微调】：根据左/右手稍微错开左右位置（X轴），避免两只手的物体穿模重叠在正中间
             float xOffset = (sanitizedHand == "LEFT") ? -0.4f : 0.4f;
             target.transform.localPosition = new Vector3(xOffset, 0.8f, 1.0f);
             target.transform.localRotation = Quaternion.identity;
 
-            Debug.Log($"<color=cyan>[物理原语] 成功用【{sanitizedHand}手】抓取物体: {target.name}</color>");
+            Debug.Log($"<color=cyan>[物理原语] 成功用【{sanitizedHand}手】抓取: {target.name}</color>");
+
+            // 🌟 事件驱动核心：抓取成功立即通知大脑
+            OnGrabSuccess?.Invoke(target, sanitizedHand);
         }
         else
         {
-            Debug.LogWarning($"[物理原语] GRAB 失败：无法找到目标 {targetId} 或距离太远");
+            Debug.LogWarning($"[物理原语] GRAB 失败：找不到目标 {targetId}");
         }
-
-        yield return new WaitForSeconds(0.25f);
     }
 }
