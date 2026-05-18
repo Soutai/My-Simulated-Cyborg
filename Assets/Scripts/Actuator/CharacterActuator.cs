@@ -131,13 +131,13 @@ public class CharacterActuator : MonoBehaviour
     // ==================== 🌟 双手重构核心：带“手”路由的物理交互逻辑 ====================
     private void TriggerUseLogic(string hand)
     {
-        // 🌟 修正：确保传入的参数做大写鲁棒性处理
         string sanitizedHand = (hand ?? "").ToUpper().Trim();
         GameObject activeObject = (sanitizedHand == "LEFT") ? leftHandObject : rightHandObject;
 
+        // 1. 先处理武器（木棍挥舞）
         if (activeObject != null && activeObject.name.Contains("Stick"))
         {
-            Debug.Log($"<color=yellow>[物理交互] 挥舞【{sanitizedHand}手】木棍！</color>");
+            Debug.Log($"<color=yellow>[物理交互] 原始人挥舞了【{sanitizedHand}手】的木棍！</color>");
             Collider[] hits = Physics.OverlapSphere(transform.position + transform.forward * 1f, 2f);
             foreach (var h in hits)
             {
@@ -151,7 +151,23 @@ public class CharacterActuator : MonoBehaviour
             return;
         }
 
-        // 吃食物逻辑
+        // 2. 处理手里拿着的食物（核心修复）
+        if (activeObject != null && (activeObject.name.Contains("Fruit") || activeObject.CompareTag("Food")))
+        {
+            NPCAttributes attr = GetComponent<NPCAttributes>();
+            if (attr) attr.satiety = Mathf.Clamp(attr.satiety + 15f, 0f, 100f);
+
+            Debug.Log($"<color=green>[物理交互] 🍎 用【{sanitizedHand}手】吃掉了手里拿着的 {activeObject.name}！</color>");
+
+            // 清空手部引用并销毁
+            if (sanitizedHand == "LEFT") leftHandObject = null;
+            else rightHandObject = null;
+
+            Destroy(activeObject);
+            return;
+        }
+
+        // 3. 兼容旧逻辑：吃地上的食物（防止以后需要）
         Collider[] closeObjects = Physics.OverlapSphere(transform.position, 0.8f);
         foreach (var col in closeObjects)
         {
@@ -159,13 +175,8 @@ public class CharacterActuator : MonoBehaviour
             {
                 NPCAttributes attr = GetComponent<NPCAttributes>();
                 if (attr) attr.satiety = Mathf.Clamp(attr.satiety + 15f, 0f, 100f);
-                Debug.Log($"<color=green>[物理交互] 🍎 用【{sanitizedHand}手】吃掉果子！</color>");
+                Debug.Log($"<color=green>[物理交互] 🍎 消耗了地上的果子进食！</color>");
 
-                if (col.gameObject == activeObject)
-                {
-                    if (sanitizedHand == "LEFT") leftHandObject = null;
-                    else rightHandObject = null;
-                }
                 Destroy(col.gameObject);
                 break;
             }
