@@ -83,22 +83,6 @@ public class AIBrainController : MonoBehaviour
         yield break;
     }
 
-    private void HandleGrabSuccess(GameObject grabbedObj, string hand)
-    {
-        Debug.Log($"<color=lime>[大脑] 🎉 抓取成功 → {grabbedObj.name}，检查是否需要重新思考...</color>");
-
-        // 🌟 关键优化：只有在当前没有正在执行的多步计划时，才请求新思考
-        if (smallBrain != null && smallBrain.IsPlanEmpty())
-        {
-            Debug.Log("<color=lime>[大脑] 📍 当前计划已完成，请求大脑重新思考</color>");
-            RequestImmediateThink();
-        }
-        else
-        {
-            Debug.Log("<color=cyan>[大脑] 📍 仍在执行多步计划中，无需立即重新思考</color>");
-        }
-    }
-
     private void OnAIResponseReceived(string rawResponse, string snapshotHeld, string snapshotGoal)
     {
         Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 📥 收到AI回复");
@@ -111,7 +95,7 @@ public class AIBrainController : MonoBehaviour
             return;
         }
 
-        Debug.Log($"<color=yellow>[大脑] 📊 解析成功 → goal='{decision.goal}' | plan_steps={decision.plan_steps?.Count ?? 0} | persistent_goal='{decision.persistent_goal}'</color>");
+        Debug.Log($"<color=yellow>[大脑] 📊 解析成功 → goal='{decision.goal}' | plan_steps={decision.plan_steps?.Count ?? 0}</color>");
 
         if (!string.IsNullOrEmpty(rawResponse))
             Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 💬 收到的AI原始回复内容如下：\n{rawResponse}");
@@ -119,62 +103,55 @@ public class AIBrainController : MonoBehaviour
         if (monologueDisplay != null)
             monologueDisplay.text = decision.monologue;
 
-        // 1. 执行即时原子动作（最高优先级）
+        // ==================== 只执行原子原语 ====================
+        List<PrimitiveCommand> commandsToExecute = new List<PrimitiveCommand>();
+
+        // 1. 即时原子动作（最高优先级）
         if (decision.primitive_commands != null && decision.primitive_commands.Count > 0)
         {
-            Debug.Log($"<color=green>[大脑] ⚡ 执行 {decision.primitive_commands.Count} 条即时原语</color>");
-            actuator?.ExecutePrimitiveSequence(decision.primitive_commands, actionDisplay);
+            commandsToExecute.AddRange(decision.primitive_commands);
+            Debug.Log($"<color=green>[大脑] ⚡ 执行 {decision.primitive_commands.Count} 条即时原子原语</color>");
         }
 
-        // 2. 持久目标（长期自主行为）—— 优先处理
-        if (!string.IsNullOrEmpty(decision.persistent_goal))
-        {
-            Debug.Log($"<color=magenta>[大脑] 🌌 检测到持久目标 → {decision.persistent_goal}</color>");
-            if (smallBrain != null)
-            {
-                smallBrain.SetPersistentGoal(decision.persistent_goal);
-            }
-            isThinking = false;
-            return;   // 直接返回，不再执行短期计划
-        }
-
-        // 3. 多步短期计划
+        // 2. 多步计划 → 转换为原子原语序列
         if (decision.plan_steps != null && decision.plan_steps.Count > 0)
         {
-            Debug.Log($"<color=cyan>[大脑] 📋 收到多步计划，共 {decision.plan_steps.Count} 步</color>");
-            if (smallBrain != null)
+            Debug.Log($"<color=cyan>[大脑] 📋 收到 {decision.plan_steps.Count} 步计划，转换为原子指令序列</color>");
+
+            foreach (var step in decision.plan_steps)
             {
-                smallBrain.SetNewPlan(decision.plan_steps, decision.goal);
+                var cmd = new PrimitiveCommand
+                {
+                    op = step.arrival_op ?? "APPLY_FORCE",
+                    hand = step.hand,
+                    target_id = step.target_id
+                };
+                commandsToExecute.Add(cmd);
             }
         }
-        // 4. 兼容旧的单步 goal
-        else if (smallBrain != null && !string.IsNullOrEmpty(decision.goal_target_id))
-        {
-            string goalStr = string.IsNullOrEmpty(decision.goal) ? "无" : decision.goal;
-            Debug.Log($"<color=orange>[大脑] 🎯 单步目标 → 【{goalStr}】 | ID={decision.goal_target_id}</color>");
 
-            var singleStep = new List<PlanStep>
+        // 执行所有原子原语
+        if (commandsToExecute.Count > 0)
         {
-            new PlanStep
-            {
-                description = goalStr,
-                target_id = decision.goal_target_id,
-                arrival_op = decision.goal_arrival_command?.op ?? "GRAB",
-                hand = decision.goal_arrival_command?.hand
-            }
-        };
-            smallBrain.SetNewPlan(singleStep, goalStr);
+            smallBrain?.ExecuteCommands(commandsToExecute);
         }
         else
         {
-            Debug.Log("<color=gray>[大脑] 当前无新计划或持久目标</color>");
+            Debug.Log("<color=gray>[大脑] 当前无原子原语可执行</color>");
         }
 
         currentGoal = string.IsNullOrEmpty(decision.goal) ? "无" : decision.goal;
-        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 🎯 决策完成 → 当前计划: 【{currentGoal}】 | 持久目标: 【{decision.persistent_goal}】");
+        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 🎯 决策完成 → 当前目标: 【{currentGoal}】");
 
         isThinking = false;
     }
+
+    private void HandleGrabSuccess(GameObject grabbedObj, string hand)
+    {
+        Debug.Log($"<color=lime>[大脑] 🎉 抓取成功 → {grabbedObj.name}</color>");
+        // 纯原语驱动下，不自动请求新思考，由AI自主决定下一步
+    }
+
     private void OnAIRequestFailed()
     {
         Debug.LogWarning($"[{GetCurrentTimestamp()}] [大脑] ❌ 请求失败");
@@ -200,19 +177,12 @@ public class AIBrainController : MonoBehaviour
         if (!isThinking) OnPhysicsBrainTick();
     }
 
-    // 🌟 SimulationManager 需要的重置方法
     public void InterruptAndClearGoal()
     {
         currentGoal = "无";
-
-        if (smallBrain != null)
-            smallBrain.InterruptAndClearGoal();
-
-        if (actuator != null)
-            actuator.StopAllPhysicalMovement();
-
+        if (smallBrain != null) smallBrain.InterruptAndClear();
+        if (actuator != null) actuator.StopAllPhysicalMovement();
         isThinking = false;
-        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] ⚠️ 外部重置信号触发");
     }
 
     void OnDestroy()
