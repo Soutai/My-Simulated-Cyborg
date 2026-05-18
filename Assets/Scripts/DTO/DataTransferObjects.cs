@@ -1,64 +1,85 @@
-// DataTransferObjects.cs
-// 这是一个纯粹的数据结构文件，放在项目的 Scripts/DTO 目录下
-
+using System;
 using System.Collections.Generic;
+using UnityEngine;
 
 namespace EmbodiedAI.DTO
 {
-    [System.Serializable]
+    [Serializable]
     public class PrimitiveCommand
     {
-        public string op;        // APPLY_FORCE, GRAB, RELEASE, USE_ITEM
-        public float arg_x;
-        public float arg_z;
-        public string target_id;
-
-        // 🌟【双手新增】指定本次物理原语作用于哪只手: "Left" 或 "Right"
-        // 规定：小脑移动时默认不依赖手；但 GRAB, RELEASE, USE_ITEM 必须指定手
-        public string hand;
+        public string op;                    // "APPROACH", "MOVE_DIRECTION", "APPLY_FORCE", "GRAB", "RELEASE", "USE_ITEM"
+        public string hand = "";             // Left / Right （保留你原来的双手机制）
+        public string target_id = "";
+        public float arg_x = 0f;
+        public float arg_z = 0f;
+        public float strength = 1f;          // 用于 MOVE_DIRECTION / APPROACH 的强度 (0.5~2.0)
     }
 
-    [System.Serializable]
+    [Serializable]
+    public class PlanStep
+    {
+        public string description;
+        public string arrival_op;            // 同 op
+        public string hand = "";             // 保留双手支持
+        public string target_id = "";
+        public float arg_x = 0f;
+        public float arg_z = 0f;
+        public float strength = 1f;
+    }
+
+    [Serializable]
     public class AIPhysicsDecision
     {
         public string monologue;
-        public List<PrimitiveCommand> primitive_commands;
-        public string goal;
-        public string goal_target_id;
+        public List<PrimitiveCommand> primitive_commands = new List<PrimitiveCommand>();
 
-        // 🌟【大小脑协作升级】小脑护送肉身抵达后，指定由哪只手去执行临门一脚
-        public PrimitiveCommand goal_arrival_command;
+        public string goal = "无";
+        public string goal_target_id = "";
+        public PrimitiveCommand goal_arrival_command;   // 保留原有到达后动作（含hand）
 
-        // 🌟 新增：最小多步计划支持（最小改动）
-        public List<PlanStep> plan_steps;
-        // 🌟 新增：持久目标（长期意图）
-        public string persistent_goal;
+        public List<PlanStep> plan_steps = new List<PlanStep>();
     }
 
-    [System.Serializable]
-    public class PlanStep
-    {
-        public string description;        // 给AI自己看的描述
-        public string target_id;
-        public string arrival_op;         // "GRAB" / "USE_ITEM"
-        public string hand;
-    }
-
-    // Google API 规范需要的底层请求/响应外壳
-    [System.Serializable]
+    // ====================== Gemini API 请求/响应结构 ======================
+    [Serializable]
     public class GeminiRequest
     {
         public RequestContent[] contents;
-        [System.Serializable] public class RequestContent { public RequestPart[] parts; }
-        [System.Serializable] public class RequestPart { public string text; }
+
+        [Serializable]
+        public class RequestContent
+        {
+            public RequestPart[] parts;
+        }
+
+        [Serializable]
+        public class RequestPart
+        {
+            public string text;
+        }
     }
 
-    [System.Serializable]
+    [Serializable]
     public class GeminiResponse
     {
         public Candidate[] candidates;
-        [System.Serializable] public class Candidate { public Content content; }
-        [System.Serializable] public class Content { public Part[] parts; }
-        [System.Serializable] public class Part { public string text; }
+
+        [Serializable]
+        public class Candidate
+        {
+            public Content content;
+        }
+
+        [Serializable]
+        public class Content
+        {
+            public Part[] parts;
+        }
+
+        [Serializable]
+        public class Part
+        {
+            public string text;
+        }
     }
 }

@@ -8,8 +8,10 @@ public class NPCAttributes : MonoBehaviour
     public float satiety = 100f;
 
     [Header("性格/本能倾向设定")]
-    [Tooltip("RISK_AVOIDANT: 极度怕死，优先防身; RISK_TAKER: 亡命之徒，饿了就要吃")]
-    public string personality = "RISK_TAKER";
+    [Tooltip("RISK_AVOIDANT: 极度怕死，优先防身; " +
+             "RISK_TAKER: 亡命之徒，饿了就要吃；" +
+             "GLUTTONS: 贪吃的人，只要不饱就想吃东西；")]
+    public string personality = "GLUTTONS";
 
     [Header("UI 绑定")]
     public Slider satietySlider;

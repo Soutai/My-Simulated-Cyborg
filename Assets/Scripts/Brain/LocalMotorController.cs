@@ -3,81 +3,76 @@ using System.Collections.Generic;
 using EmbodiedAI.DTO;
 
 [RequireComponent(typeof(CharacterActuator))]
-[RequireComponent(typeof(PerceptionRadar))]
+[RequireComponent(typeof(AIBrainController))]
 public class LocalMotorController : MonoBehaviour
 {
-    [Header("小脑参数")]
-    public float tickInterval = 0.2f;
-
     private CharacterActuator actuator;
     private AIBrainController brain;
 
-    private Queue<PrimitiveCommand> commandQueue = new Queue<PrimitiveCommand>();
-
-    private float lastTickTime = 0f;
+    // 标记当前小脑是否正在执行一连串计划
+    private bool isBusy = false;
 
     void Awake()
     {
         actuator = GetComponent<CharacterActuator>();
         brain = GetComponent<AIBrainController>();
+
+        // 监听执行器，当一轮动作序列彻底做完时，释放小脑状态
+        if (actuator != null)
+        {
+            actuator.OnSequenceFinished += () => { isBusy = false; };
+        }
     }
 
-    void Update()
-    {
-        if (Time.time - lastTickTime < tickInterval) return;
-        lastTickTime = Time.time;
-        TickSmallBrain();
-    }
-
+    // 大脑决策完成后，直接把整个多步计划打包扔过来
     public void SetNewPlan(List<PlanStep> planSteps, string initialGoal = "")
     {
-        commandQueue.Clear();
-
-        if (planSteps != null && planSteps.Count > 0)
+        if (isBusy)
         {
-            foreach (var step in planSteps)
-            {
-                var cmd = new PrimitiveCommand
-                {
-                    op = step.arrival_op ?? "APPLY_FORCE",
-                    hand = step.hand,
-                    target_id = step.target_id
-                };
-                commandQueue.Enqueue(cmd);
-            }
-
-            Debug.Log($"<color=orange>[小脑] 📋 接收到 {planSteps.Count} 步原子计划，开始顺序执行</color>");
+            Debug.LogWarning("[小脑] ⚠️ 当前序列正在执行中，拒绝新计划（除非调用 InterruptAndClear）");
+            return;
         }
+
+        if (planSteps == null || planSteps.Count == 0) return;
+
+        // 将大语言模型的 Plan 转换为底层的原子指令包
+        List<PrimitiveCommand> cmdList = new List<PrimitiveCommand>();
+        foreach (var step in planSteps)
+        {
+            var cmd = new PrimitiveCommand
+            {
+                op = step.arrival_op ?? "APPLY_FORCE",
+                hand = step.hand,
+                target_id = step.target_id,
+                arg_x = step.arg_x,
+                arg_z = step.arg_z,
+                strength = step.strength
+            };
+            cmdList.Add(cmd);
+        }
+
+        Debug.Log($"<color=orange>[小脑] 📋 接收到 {planSteps.Count} 步原子计划，打包交付物理执行器</color>");
+
+        isBusy = true;
+        // 一把将整个动作包扔给协程流水线
+        actuator.ExecutePrimitiveSequence(cmdList, null);
     }
 
-    private void TickSmallBrain()
-    {
-        if (commandQueue.Count == 0) return;
-
-        PrimitiveCommand cmd = commandQueue.Dequeue();
-
-        Debug.Log($"<color=yellow>[小脑] ⚙️ 执行原子原语: {cmd.op}</color>");
-
-        List<PrimitiveCommand> single = new List<PrimitiveCommand> { cmd };
-        actuator.ExecutePrimitiveSequence(single, null);
-    }
-
+    // 兼容原有的单条指令增量发送接口
     public void ExecuteCommands(List<PrimitiveCommand> commands)
     {
+        if (isBusy) return;
         if (commands == null || commands.Count == 0) return;
 
-        foreach (var cmd in commands)
-        {
-            commandQueue.Enqueue(cmd);
-        }
-
-        Debug.Log($"<color=orange>[小脑] 📥 接收到 {commands.Count} 条原子原语</color>");
+        isBusy = true;
+        actuator.ExecutePrimitiveSequence(commands, null);
+        Debug.Log($"<color=orange>[小脑] 📥 接收到 {commands.Count} 条独立原子原语并执行</color>");
     }
 
     public void InterruptAndClear()
     {
-        commandQueue.Clear();
+        isBusy = false;
         if (actuator != null) actuator.StopAllPhysicalMovement();
-        Debug.Log("<color=gray>[小脑] 🛑 清空执行队列</color>");
+        Debug.Log("<color=gray>[小脑] 🛑 强制中断当前物理动作并清空状态</color>");
     }
 }

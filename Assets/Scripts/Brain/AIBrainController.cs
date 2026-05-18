@@ -124,7 +124,10 @@ public class AIBrainController : MonoBehaviour
                 {
                     op = step.arrival_op ?? "APPLY_FORCE",
                     hand = step.hand,
-                    target_id = step.target_id
+                    target_id = step.target_id,
+                    arg_x = step.arg_x,      // 新增：支持新原语
+                    arg_z = step.arg_z,      // 新增
+                    strength = step.strength // 新增
                 };
                 commandsToExecute.Add(cmd);
             }
