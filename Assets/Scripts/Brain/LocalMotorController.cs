@@ -47,6 +47,7 @@ public class LocalMotorController : MonoBehaviour
     // 接收大脑下发的计划（单步或多步）
     public void SetNewPlan(List<PlanStep> planSteps, string initialGoal = "")
     {
+        // 取消之前的持久探索
         CancelInvoke("WanderStep");
 
         currentPlanSteps = planSteps ?? new List<PlanStep>();
@@ -54,16 +55,13 @@ public class LocalMotorController : MonoBehaviour
 
         if (currentPlanSteps.Count > 0)
         {
-            // 【关键】开始执行多步计划时，暂停大脑思考
-            if (brain != null) brain.SetThinking(true);
-
             var firstStep = currentPlanSteps[0];
             currentGoal = firstStep.description;
             currentGoalTargetId = firstStep.target_id;
 
             PrimitiveCommand cmd = new PrimitiveCommand
             {
-                op = firstStep.arrival_op ?? "APPLY_FORCE",
+                op = firstStep.arrival_op ?? "GRAB",
                 hand = firstStep.hand,
                 target_id = firstStep.target_id
             };
@@ -80,19 +78,6 @@ public class LocalMotorController : MonoBehaviour
 
     private void TickSmallBrain()
     {
-        if (string.IsNullOrEmpty(currentGoalTargetId))
-        {
-            if (arrivalCommand != null && arrivalCommand.op == "APPLY_FORCE")
-            {
-                Debug.Log($"<color=yellow>[小脑] ⚡ 执行纯移动指令: APPLY_FORCE ({arrivalCommand.arg_x:F1}, {arrivalCommand.arg_z:F1})</color>");
-                List<PrimitiveCommand> cmds = new List<PrimitiveCommand> { arrivalCommand };
-                actuator.ExecutePrimitiveSequence(cmds, null);
-            }
-            NextStepOrReset();
-            return;
-        }
-
-        // 普通有目标的寻路步骤
         if (string.IsNullOrEmpty(currentGoalTargetId)) return;
 
         GameObject targetObj = GameObject.Find(currentGoalTargetId);
@@ -138,7 +123,7 @@ public class LocalMotorController : MonoBehaviour
 
             arrivalCommand = new PrimitiveCommand
             {
-                op = nextStep.arrival_op ?? "APPLY_FORCE",
+                op = nextStep.arrival_op ?? "GRAB",
                 hand = nextStep.hand,
                 target_id = nextStep.target_id
             };
@@ -148,15 +133,12 @@ public class LocalMotorController : MonoBehaviour
         else
         {
             Debug.Log("<color=lime>[小脑] ✅ 完整计划执行完毕，请求大脑重新思考</color>");
-
             currentPlanSteps.Clear();
             currentStepIndex = 0;
             currentGoal = "无";
             currentGoalTargetId = "";
             arrivalCommand = null;
 
-            // 【关键】只有计划真正完成时，才恢复大脑思考
-            if (brain != null) brain.SetThinking(false);
             if (brain != null) brain.RequestImmediateThink();
         }
     }
@@ -166,7 +148,7 @@ public class LocalMotorController : MonoBehaviour
     {
         if (string.IsNullOrEmpty(goalDescription)) return;
 
-        // 取消之前的任何本地循环
+        // 取消之前的探索循环
         CancelInvoke("WanderStep");
 
         currentPersistentGoal = goalDescription;
@@ -176,56 +158,66 @@ public class LocalMotorController : MonoBehaviour
         if (strategy != null)
         {
             currentPersistentIntent = strategy.intentType;
-            Debug.Log($"<color=cyan>[小脑] 🌌 进入持久意图 → {strategy.intentType} </color>");
-            Debug.Log($"<color=cyan>[小脑] 📜 执行策略: {strategy.executionGuidance}</color>");
+            Debug.Log($"<color=cyan>[小脑] 🌌 进入持久意图 → {strategy.intentType} ({strategy.executionHint})</color>");
 
-            // 【重要】不再使用本地随机 Wander，等待 AI 下发 APPLY_FORCE
-            // 小脑只保持“持久模式开启”状态
+            switch (strategy.executionHint)
+            {
+                case "foraging_search":
+                    StartForagingSearch();
+                    break;
+                case "frontier_explore":
+                    StartFrontierExploration();
+                    break;
+                default:
+                    StartBasicWander();
+                    break;
+            }
         }
         else
         {
-            Debug.LogWarning($"[小脑] 未知持久目标: {goalDescription}");
+            Debug.LogWarning($"[小脑] 未知持久目标: {goalDescription}，使用默认探索");
+            StartBasicWander();
         }
     }
 
-    //private void StartBasicWander()
-    //{
-    //    Debug.Log("<color=cyan>[小脑] 开始持久基础探索模式（每2.5秒换方向）</color>");
-    //    InvokeRepeating("WanderStep", 0f, 2.5f);
-    //}
+    private void StartBasicWander()
+    {
+        Debug.Log("<color=cyan>[小脑] 开始持久基础探索模式（每2.5秒换方向）</color>");
+        InvokeRepeating("WanderStep", 0f, 2.5f);
+    }
 
-    //private void WanderStep()
-    //{
-    //    if (currentPersistentIntent == PersistentIntent.None)
-    //    {
-    //        CancelInvoke("WanderStep");
-    //        return;
-    //    }
+    private void WanderStep()
+    {
+        if (currentPersistentIntent == PersistentIntent.None)
+        {
+            CancelInvoke("WanderStep");
+            return;
+        }
 
-    //    Vector3 dir = Random.insideUnitSphere;
-    //    dir.y = 0;
-    //    dir.Normalize();
+        Vector3 dir = Random.insideUnitSphere;
+        dir.y = 0;
+        dir.Normalize();
 
-    //    var cmd = new PrimitiveCommand
-    //    {
-    //        op = "APPLY_FORCE",
-    //        arg_x = dir.x * 3.2f,
-    //        arg_z = dir.z * 3.2f
-    //    };
-    //    actuator.ExecutePrimitiveSequence(new List<PrimitiveCommand> { cmd }, null);
-    //}
+        var cmd = new PrimitiveCommand
+        {
+            op = "APPLY_FORCE",
+            arg_x = dir.x * 3.2f,
+            arg_z = dir.z * 3.2f
+        };
+        actuator.ExecutePrimitiveSequence(new List<PrimitiveCommand> { cmd }, null);
+    }
 
-    //private void StartForagingSearch()
-    //{
-    //    Debug.Log("<color=cyan>[小脑] 开始觅食搜索模式</color>");
-    //    StartBasicWander();
-    //}
+    private void StartForagingSearch()
+    {
+        Debug.Log("<color=cyan>[小脑] 开始觅食搜索模式</color>");
+        StartBasicWander();
+    }
 
-    //private void StartFrontierExploration()
-    //{
-    //    Debug.Log("<color=cyan>[小脑] 开始前沿探索模式</color>");
-    //    StartBasicWander();
-    //}
+    private void StartFrontierExploration()
+    {
+        Debug.Log("<color=cyan>[小脑] 开始前沿探索模式</color>");
+        StartBasicWander();
+    }
 
     private void MoveTowardsTarget(Vector3 targetPos)
     {
