@@ -31,13 +31,9 @@ namespace EmbodiedAI.DTO
     public class AIPhysicsDecision
     {
         public string monologue;
-        public List<PrimitiveCommand> primitive_commands = new List<PrimitiveCommand>();
-
-        public string goal = "无";
-        public string goal_target_id = "";
-        public PrimitiveCommand goal_arrival_command;   // 保留原有到达后动作（含hand）
-
-        public List<PlanStep> plan_steps = new List<PlanStep>();
+        public string goal = "无"; // 大脑当前认定的宏观战略目标（如：打狼、觅食）
+        public List<PlanStep> plan_steps = new List<PlanStep>(); // 为该目标规划的多步原子原子动作序列
+        public string interrupt_anchor_type = "None"; // 可选值: "Food", "Enemy", "Weapon", "None"
     }
 
     // ====================== Gemini API 请求/响应结构 ======================

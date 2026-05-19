@@ -25,7 +25,12 @@ public class PromptManager : MonoBehaviour
             $"系统时间: {currentTimeStr} | 饱食度: {satiety:F1}/100 | 性格本能: {personality}\n\n" +
             $"🌟 左手持物: {leftItemStr}\n" +
             $"🌟 右手持物: {rightItemStr}\n" +
-            $"🎯 当前主要目标: {currentGoal}\n\n" +
+            // 🌟【核心修改】：强行让大模型意识到它已经安排过这个任务了！
+            $"🎯 身体当前正在推进执行的宏观战略 (Goal): {currentGoal}\n" +
+            $"⚠️ 指挥官核心因果链原则：\n" +
+            $"- 当你看到当前主要目标不是‘无’时，说明你的身体正在完美执行你上一轮下达的命令。\n" +
+            $"- 你千万不要由于失忆，再次下达相同意图的初始动作（比如身体已经拿着木棍走向狼，你不要再下达‘去捡木棍’）！\n" +
+            $"- 你应当保持时空连续性，在返回的 `plan_steps` 中，无缝规划在此战略【完成之后】或者【中途需要突变调整】时的下一步任务序列！\n\n" +
 
             "## 1. 原子物理原语（必须严格遵守）\n" +
             "- APPLY_FORCE: 必须提供 arg_x 和 arg_z！（arg_x >0=右, <0=左 | arg_z >0=前, <0=后，建议力度 2.0~4.0）\n" +
@@ -57,6 +62,9 @@ public class PromptManager : MonoBehaviour
             "  - MOVE_DIRECTION（向前） → APPROACH Fruit → GRAB（Left） → USE_ITEM（Left）\n" +
             "  - APPLY_FORCE 微调位置 → GRAB\n" +
             "- plan_steps 中每一项必须包含 description、arrival_op、hand（target_id / arg_x / arg_z / strength 根据 op 类型提供）。\n\n" +
+            "- 【战略惊醒锚点】：如果你当前处于大范围搜寻、巡逻、探路等没有明确终点的长程移动任务（单次规划15-20步），" +
+            "你必须在 JSON 的 `interrupt_anchor_type` 字段中，填入你本次搜寻的核心欲望目标类型（可选值：'Food'、'Enemy'、'Weapon'）。一旦身体在走路时雷达首次扫到该类型，" +
+            "小脑将立刻掐断走格子计划交还控制权。如果是去抓取眼前特定物品等短程确定性连招，请务必将其设为 'None'。\n" +
 
             "## 5. 绝对限制 JSON 响应格式\n" +
             "必须严格返回标准的 JSON 格式块，不要包含任何 markdown 解释。\n" +
@@ -65,6 +73,7 @@ public class PromptManager : MonoBehaviour
             "  \"monologue\": \"思考过程（中文）...\",\n" +
             "  \"primitive_commands\": [],\n" +
             "  \"goal\": \"短期目标描述\",\n" +
+            "  \"interrupt_anchor_type\": \"Food\",\n" + 
             "  \"plan_steps\": [\n" +
             "    { \"description\": \"靠近木棍\", \"arrival_op\": \"APPROACH\", \"target_id\": \"Stick\", \"strength\": 1.0 },\n" +
             "    { \"description\": \"用右手抓取木棍\", \"arrival_op\": \"GRAB\", \"hand\": \"Right\", \"target_id\": \"Stick\" },\n" +

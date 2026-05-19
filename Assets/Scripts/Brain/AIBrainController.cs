@@ -3,31 +3,47 @@ using System.Collections;
 using System.Collections.Generic;
 using EmbodiedAI.DTO;
 
+// 🌟 【强力躯干护栏】：强制要求 NPC 身上必须同时带有这六个组件，缺一不可，Unity 会在挂载时自动补齐
+[RequireComponent(typeof(CharacterActuator))]
+[RequireComponent(typeof(LocalMotorController))]
+[RequireComponent(typeof(NPCAttributes))]
+[RequireComponent(typeof(PerceptionRadar))]
+[RequireComponent(typeof(PromptManager))]
+[RequireComponent(typeof(GeminiHttpClient))]
 public class AIBrainController : MonoBehaviour
 {
-    [Header("组件")]
-    public NPCAttributes attributes;
-    public PerceptionRadar radar;
-    public PromptManager promptManager;
-    public GeminiHttpClient httpClient;
-    public CharacterActuator actuator;
-    public LocalMotorController smallBrain;
-
-    [Header("UI")]
+    [Header("🖥️ UI 元素 (只有 UI 需要手动拖拽)")]
     public UnityEngine.UI.Text monologueDisplay;
     public UnityEngine.UI.Text actionDisplay;
 
+    // 🌟 核心外设与躯干全部私有化，彻底隐藏！面板上再也不会有任何 None 空框！
+    private NPCAttributes attributes;
+    private PerceptionRadar radar;
+    private PromptManager promptManager;
+    private GeminiHttpClient httpClient;
+    private CharacterActuator actuator;
+    private LocalMotorController smallBrain;
+
     private bool isThinking = false;
     private string currentGoal = "无";
+    private string currentInterruptAnchor = "None";
+
+    private float lastDangerDensity = 0f;
+    [Header("🧠 小脑本能中断阈值")]
+    public float dangerThreshold = 2.5f;
+
+    // AIBrainController.cs 追加对外接口
+    public string CurrentInterruptAnchor => currentInterruptAnchor;
 
     void Awake()
     {
-        if (attributes == null) attributes = GetComponent<NPCAttributes>();
-        if (radar == null) radar = GetComponent<PerceptionRadar>();
-        if (promptManager == null) promptManager = GetComponent<PromptManager>();
-        if (httpClient == null) httpClient = GetComponent<GeminiHttpClient>();
-        if (actuator == null) actuator = GetComponent<CharacterActuator>();
-        if (smallBrain == null) smallBrain = GetComponent<LocalMotorController>();
+        // 🌟 在本地一口气自动抓取全部挂在自己身上的组件，零性能开销，100% 自动化
+        attributes = GetComponent<NPCAttributes>();
+        radar = GetComponent<PerceptionRadar>();
+        promptManager = GetComponent<PromptManager>();
+        httpClient = GetComponent<GeminiHttpClient>();
+        actuator = GetComponent<CharacterActuator>();
+        smallBrain = GetComponent<LocalMotorController>();
 
         if (actuator != null)
             actuator.OnGrabSuccess += HandleGrabSuccess;
@@ -43,121 +59,137 @@ public class AIBrainController : MonoBehaviour
 
     private IEnumerator DelayedFirstTick()
     {
-        yield return new WaitForSeconds(1f);
+        yield return new WaitForSeconds(1.0f);
         OnPhysicsBrainTick();
     }
 
-    public void OnPhysicsBrainTick()
+    void FixedUpdate()
+    {
+        // 每帧动态计算小脑雷达感知范围内的环境危险密度
+        float currentDangerDensity = CalculateEnvironmentalDangerDensity();
+
+        // 计算关于时间的导数（突变率）
+        float dDanger_dt = (currentDangerDensity - lastDangerDensity) / Time.fixedDeltaTime;
+        lastDangerDensity = currentDangerDensity;
+
+        // 【本能中断判定】：如果危险突变率超过阈值，说明发生了瞬时剧变
+        if (dDanger_dt > dangerThreshold)
+        {
+            Debug.LogError($"<color=red>🚨 [小脑物理本能爆发] 检测到环境危险熵突变率 {dDanger_dt:F2} 超过安全阈值 {dangerThreshold}！触发本能中断！</color>");
+
+            // 1. 瞬间踩死物理刹车，强行格式化双缓冲待办清单
+            InterruptAndClearGoal();
+
+            // 2. 零延迟强制大脑立刻联网对剧变进行思考
+            RequestImmediateThink();
+        }
+    }
+
+    private float CalculateEnvironmentalDangerDensity()
+    {
+        if (radar == null) return 0f;
+
+        Collider[] hitColliders = Physics.OverlapSphere(transform.position, radar.perceptionRadius);
+        float totalDanger = 0f;
+
+        foreach (var col in hitColliders)
+        {
+            if (col.gameObject == this.gameObject) continue;
+
+            SemanticObject semanticObj = col.GetComponent<SemanticObject>();
+            Rigidbody targetRb = col.GetComponent<Rigidbody>();
+
+            if (semanticObj != null)
+            {
+                float omega = 0f;
+                if (semanticObj.semanticType == SemanticType.Enemy) omega = 2.5f;     // 狼高危
+                else if (semanticObj.semanticType == SemanticType.Weapon) omega = 0.1f;
+
+                // 获取物体的绝对运动速度
+                Vector3 velocityVec = targetRb != null ? targetRb.linearVelocity : Vector3.zero;
+                float velocity = velocityVec.magnitude;
+
+                // 🌟【新增保护护栏】：如果物体有速度，判断它是在接近我还是远离我
+                if (velocity > 0.1f)
+                {
+                    Vector3 toMe = (transform.position - col.transform.position).normalized;
+                    // 计算物体运动方向与“朝向我”方向的点积
+                    float dot = Vector3.Dot(velocityVec.normalized, toMe);
+
+                    // 如果 dot <= 0，说明物体的运动方向正在背离我（被打飞或逃跑），威胁度归零！
+                    if (dot <= 0f) continue;
+                }
+
+                float distance = Vector3.Distance(transform.position, col.transform.position);
+                if (distance < 0.5f) distance = 0.5f;
+
+                totalDanger += (velocity * omega) / (distance * distance);
+            }
+        }
+
+        return totalDanger;
+    }
+
+    private void OnPhysicsBrainTick()
     {
         if (isThinking) return;
-        StartCoroutine(ThinkPhysicsRoutine());
-    }
 
-    private IEnumerator ThinkPhysicsRoutine()
-    {
-        if (isThinking) yield break;
-        isThinking = true;
+        string radarJson = radar.ScanEnvironmentToSemanticJson();
+        float currentSatiety = attributes != null ? attributes.satiety : 100f;
+        string personality = attributes != null ? attributes.personality : "DEFAULT";
+        string timeStr = TimeManager.Instance != null ? TimeManager.Instance.GetCurrentTimeString() : "00:00";
 
-        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 🧠 开始决策... 当前目标: 【{currentGoal}】");
-
-        string timeStr = TimeManager.Instance?.GetCurrentTimeString() ?? "08:00";
-        string radarData = radar.ScanEnvironmentToSemanticJson();
-
-        string leftHand = actuator?.LeftHandObject != null ? actuator.LeftHandObject.name : "空无一物";
-        string rightHand = actuator?.RightHandObject != null ? actuator.RightHandObject.name : "空无一物";
-
-        string fullPrompt = promptManager.GeneratePhysicsEnginePrompt(
-            attributes.satiety,
-            attributes.personality,
+        string finalPrompt = promptManager.GeneratePhysicsEnginePrompt(
+            currentSatiety,
+            personality,
             timeStr,
-            radarData,
-            leftHand,
-            rightHand,
-            currentGoal ?? "无");
+            radarJson,
+            actuator.LeftHandObject ? actuator.LeftHandObject.name : "",
+            actuator.RightHandObject ? actuator.RightHandObject.name : "",
+            currentGoal
+        );
 
-        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 📤 发送Prompt给Gemini");
-        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 📄 发送给AI的完整Prompt内容如下：\n{fullPrompt}");
+        isThinking = true;
+        if (monologueDisplay != null) monologueDisplay.text = "思考中...";
 
-        httpClient.PostPrompt(fullPrompt, (response) => OnAIResponseReceived(response, leftHand + "|" + rightHand, currentGoal), OnAIRequestFailed);
-
-        yield break;
+        httpClient.PostPrompt(finalPrompt, OnBrainResponseReceived, OnAIRequestFailed);
     }
 
-    private void OnAIResponseReceived(string rawResponse, string snapshotHeld, string snapshotGoal)
+    // AIBrainController.cs 约第 155 行左右
+    private void OnBrainResponseReceived(string rawText)
     {
-        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 📥 收到AI回复");
-
-        AIPhysicsDecision decision = ParseBrainResponse(rawResponse);
+        AIPhysicsDecision decision = ParseBrainResponse(rawText);
         if (decision == null)
         {
-            Debug.LogError($"[{GetCurrentTimestamp()}] [大脑] ❌ JSON 反序列化失败！");
             isThinking = false;
             return;
         }
 
-        Debug.Log($"<color=yellow>[大脑] 📊 解析成功 → goal='{decision.goal}' | plan_steps={decision.plan_steps?.Count ?? 0}</color>");
+        if (monologueDisplay != null) monologueDisplay.text = decision.monologue;
 
-        if (!string.IsNullOrEmpty(rawResponse))
-            Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 💬 收到的AI原始回复内容如下：\n{rawResponse}");
+        currentGoal = decision.goal;
 
-        if (monologueDisplay != null)
-            monologueDisplay.text = decision.monologue;
+        // 🌟【需要补上这一行】：将大模型生成的动态锚点赋予本地变量，供小脑读取！
+        currentInterruptAnchor = !string.IsNullOrEmpty(decision.interrupt_anchor_type) ? decision.interrupt_anchor_type : "None";
 
-        // ==================== 只执行原子原语 ====================
-        List<PrimitiveCommand> commandsToExecute = new List<PrimitiveCommand>();
-
-        // 1. 即时原子动作（最高优先级）
-        if (decision.primitive_commands != null && decision.primitive_commands.Count > 0)
+        // 🌟 纯净流：送入小脑双缓冲
+        if (smallBrain != null && decision.plan_steps != null && decision.plan_steps.Count > 0)
         {
-            commandsToExecute.AddRange(decision.primitive_commands);
-            Debug.Log($"<color=green>[大脑] ⚡ 执行 {decision.primitive_commands.Count} 条即时原子原语</color>");
+            smallBrain.ReceiveBrainPlan(decision.plan_steps, currentGoal);
         }
-
-        // 2. 多步计划 → 转换为原子原语序列
-        if (decision.plan_steps != null && decision.plan_steps.Count > 0)
-        {
-            Debug.Log($"<color=cyan>[大脑] 📋 收到 {decision.plan_steps.Count} 步计划，转换为原子指令序列</color>");
-
-            foreach (var step in decision.plan_steps)
-            {
-                var cmd = new PrimitiveCommand
-                {
-                    op = step.arrival_op ?? "APPLY_FORCE",
-                    hand = step.hand,
-                    target_id = step.target_id,
-                    arg_x = step.arg_x,      // 新增：支持新原语
-                    arg_z = step.arg_z,      // 新增
-                    strength = step.strength // 新增
-                };
-                commandsToExecute.Add(cmd);
-            }
-        }
-
-        // 执行所有原子原语
-        if (commandsToExecute.Count > 0)
-        {
-            smallBrain?.ExecuteCommands(commandsToExecute);
-        }
-        else
-        {
-            Debug.Log("<color=gray>[大脑] 当前无原子原语可执行</color>");
-        }
-
-        currentGoal = string.IsNullOrEmpty(decision.goal) ? "无" : decision.goal;
-        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] 🎯 决策完成 → 当前目标: 【{currentGoal}】");
 
         isThinking = false;
+        Debug.Log($"<color=lime>[大脑] 🎯 决策完成 → 当前目标: 【{currentGoal}】</color>");
     }
 
     private void HandleGrabSuccess(GameObject grabbedObj, string hand)
     {
         Debug.Log($"<color=lime>[大脑] 🎉 抓取成功 → {grabbedObj.name}</color>");
-        // 纯原语驱动下，不自动请求新思考，由AI自主决定下一步
     }
 
     private void OnAIRequestFailed()
     {
-        Debug.LogWarning($"[{GetCurrentTimestamp()}] [大脑] ❌ 请求失败");
+        Debug.Log($"[{GetCurrentTimestamp()}] [大脑] ❌ 请求失败");
         isThinking = false;
     }
 
@@ -183,17 +215,15 @@ public class AIBrainController : MonoBehaviour
     public void InterruptAndClearGoal()
     {
         currentGoal = "无";
-        if (smallBrain != null) smallBrain.InterruptAndClear();
-        if (actuator != null) actuator.StopAllPhysicalMovement();
-        isThinking = false;
-    }
+        currentInterruptAnchor = "None"; // 🌟【需要补上这一行】：打断时同步复位锚点
 
-    void OnDestroy()
-    {
+        if (smallBrain != null)
+        {
+            smallBrain.InterruptAndClear();
+        }
         if (actuator != null)
-            actuator.OnGrabSuccess -= HandleGrabSuccess;
-
-        if (TimeManager.Instance != null)
-            TimeManager.Instance.OnAITick -= OnPhysicsBrainTick;
+        {
+            actuator.StopAllPhysicalMovement();
+        }
     }
 }

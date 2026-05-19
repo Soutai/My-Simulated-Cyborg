@@ -41,14 +41,14 @@ public class GeminiHttpClient : MonoBehaviour
 
     private IEnumerator PostPromptRoutine(string prompt, System.Action<string> onRawTextReceived, System.Action onError)
     {
-        if (string.IsNullOrEmpty(apiKey))
-        {
-            Debug.LogError("[Client] API Key 为空，拒绝发送请求。");
-            onError?.Invoke();
-            yield break;
-        }
+        // 🌟【追加的 LOG 1】：显式高亮打印发送给 AI 的原始具身语义 Prompt
+        Debug.Log(
+            $"<color=#FF00FF>============ 🚀 [网络层] 正在向 Gemini 引擎提交当前环境 Tick 数据 ============\n" +
+            $"{prompt}\n" +
+            $"========================================================================</color>"
+        );
 
-        string url = $"{apiUrl}?key={apiKey}";
+        string url = apiKey == "" ? apiUrl : $"{apiUrl}?key={apiKey}";
 
         GeminiRequest requestBody = new GeminiRequest
         {
@@ -79,6 +79,14 @@ public class GeminiHttpClient : MonoBehaviour
                 {
                     var res = JsonUtility.FromJson<GeminiResponse>(rawJson);
                     string aiTextContent = res.candidates[0].content.parts[0].text;
+
+                    // 🌟【追加的 LOG 2】：显式高亮打印 AI 回复的原始决策内容
+                    Debug.Log(
+                        $"<color=#00FFFF>============ 📩 [网络层] 成功收到 Gemini 引擎决策响应 ============\n" +
+                        $"{aiTextContent}\n" +
+                        $"========================================================================</color>"
+                    );
+
                     onRawTextReceived?.Invoke(aiTextContent);
                 }
                 catch (System.Exception e)

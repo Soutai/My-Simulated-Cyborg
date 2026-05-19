@@ -63,28 +63,17 @@ public class PerceptionRadar : MonoBehaviour
         return sb.ToString();
     }
 
-    // 🌟 将这段代码粘贴到 PerceptionRadar.cs 的最底部 🌟
     private void OnDrawGizmos()
     {
-        // 设置 Gizmos 颜色为半透明黄色
-        Gizmos.color = new Color(1f, 0.92f, 0.016f, 0.15f);
+        // 1. 彻底移除原有的 Gizmos.DrawWireSphere(transform.position, perceptionRadius);
+        // 因为它会自带垂直十字交叉线。
 
-        // 1. 画出一个基础的立体线框球体（表现感知范围）
-        Gizmos.DrawWireSphere(transform.position, perceptionRadius);
-
-        // 2. 🌟 还原你记忆中的“三个坐标轴黄圈”的硬核层次感
 #if UNITY_EDITOR
-        // 稍微加深线框颜色使其更清晰
-        UnityEditor.Handles.color = new Color(1f, 0.92f, 0.016f, 0.4f);
+        // 2. 设置雷达圈的颜色和透明度（这里我把透明度调到了 0.35f 让你更容易观察）
+        UnityEditor.Handles.color = new Color(1f, 0.92f, 0.016f, 0.35f);
 
-        // 绘制水平面 (X-Z) 的雷达扫描圈
+        // 3. 仅仅绘制水平面 (X-Z) 的雷达扫描圈
         UnityEditor.Handles.DrawWireDisc(transform.position, Vector3.up, perceptionRadius);
-
-        // 绘制纵切面面 (X-Y) 的垂直参考圈
-        UnityEditor.Handles.DrawWireDisc(transform.position, Vector3.forward, perceptionRadius);
-
-        // 绘制纵切面面 (Y-Z) 的侧视参考圈
-        UnityEditor.Handles.DrawWireDisc(transform.position, Vector3.right, perceptionRadius);
 #endif
     }
 }
