@@ -112,20 +112,28 @@ public class CharacterActuator : MonoBehaviour
             yield break;
         }
 
-        // 🌟【去硬编码解耦 1】：期望停止距离完全由物体身上的语义组件或物理碰撞体决定，而不是名字！
+        // ==================== 【新配置系统】优先读取 ====================
         float desiredDistance = 0.65f;
         var semantic = target.GetComponent<SemanticObject>();
+
         if (semantic != null)
         {
-            // 如果是敌人，保持更远的战斗身位；如果是物品，贴近抓取
-            desiredDistance = (semantic.semanticType == SemanticType.Enemy) ? 2.0f : 0.65f;
+            desiredDistance = semantic.GetDesiredApproachDistance();
+        }
+        else
+        {
+            // 兜底：通过 SemanticType 查询全局配置
+            var config = SandboxProtocolConfig.GetInteractionConfig(SemanticType.Food); // 默认Food
+                                                                                        // 如果能从名字或其他方式推断类型，可以进一步优化
+            desiredDistance = config.desiredApproachDistance;
         }
 
-        // 🌟【去硬编码解耦 2】：根据大脑给的 strength 动态计算保护时间，高强度(冲刺)动作更追求敏捷
-        float maxTime = (strength > 1.2f) ? 4.0f : 10.0f;
+        float maxTime = (strength > 1.2f) ? 4.0f : 5.0f;
         float timer = 0f;
+        float lastDistance = float.MaxValue;
+        float stuckTimer = 0f;
 
-        Debug.Log($"<color=orange>[APPROACH] ⚙️ 通用物理推进启动 → 目标: {targetId} | 期望停止线: {desiredDistance:F2}m</color>");
+        Debug.Log($"<color=orange>[APPROACH] ⚙️ 通用物理推进启动 → 目标: {targetId} | 配置停止线: {desiredDistance:F2}m | 最大时间: {maxTime}s</color>");
 
         while (timer < maxTime && isExecuting && target != null)
         {
@@ -133,19 +141,48 @@ public class CharacterActuator : MonoBehaviour
             float distanceToGap = currentDistance - desiredDistance;
             float currentSpeed = rb.linearVelocity.magnitude;
 
-            // 🌟【通用物理放行判定】：不再分物品和狼！
-            // 核心逻辑：只要物理差距小于 10 厘米，且当前的物理移动速度已经“慢到无法有效破阻”时
-            // 身体为了防止卡死，主动判定送达，把决策权交还。
-            if (currentDistance <= desiredDistance || (distanceToGap <= 0.10f && currentSpeed < 0.5f))
+            // 诊断日志
+            if (timer % 0.25f < Time.deltaTime * 1.05f)
             {
-                Debug.Log($"<color=green>[APPROACH] ✅ 物理满足送达条件 {targetId}（最终距离 {currentDistance:F2}m）</color>");
+                Debug.Log($"<color=white>[APPROACH] 实时状态 | 时间:{timer:F2}s | 距离:{currentDistance:F2}m | Gap:{distanceToGap:F2}m | 速度:{currentSpeed:F2} | 配置距离:{desiredDistance:F2}</color>");
+            }
+
+            // 退出条件（使用配置的距离 + 合理容差）
+            if (currentDistance <= desiredDistance + 0.18f && currentSpeed < 1.3f)
+            {
+                Debug.Log($"<color=green>[APPROACH] ✅ 满足送达条件 {targetId}（实际 {currentDistance:F2}m，配置 {desiredDistance:F2}m，耗时 {timer:F1}s）</color>");
                 break;
             }
 
+            if (currentDistance <= desiredDistance ||
+                (distanceToGap <= 0.22f && currentSpeed < 1.1f))
+            {
+                Debug.Log($"<color=green>[APPROACH] ✅ 精确满足停止条件 {targetId}（{currentDistance:F2}m）</color>");
+                break;
+            }
+
+            // 防卡死检测
+            if (currentDistance > 1.2f && Mathf.Abs(currentDistance - lastDistance) < 0.025f)
+            {
+                stuckTimer += Time.deltaTime;
+            }
+            else
+            {
+                stuckTimer = 0f;
+            }
+
+            if (stuckTimer > 0.9f)
+            {
+                Debug.LogWarning($"<color=yellow>[APPROACH] ⚠️ 检测到物理地形死锁，强制结束 → {targetId}</color>");
+                break;
+            }
+
+            lastDistance = currentDistance;
+
+            // ====================== 你原有的物理逻辑（完全保留）======================
             Vector3 direction = (target.transform.position - transform.position).normalized;
             direction.y = 0f;
 
-            // ====== 🧠 你的非线性力学调节（完整保留其数学通用性） ======
             float dynamicForce = forceMultiplier * 4.2f * strength;
 
             if (distanceToGap < 3.0f)
@@ -153,7 +190,6 @@ public class CharacterActuator : MonoBehaviour
                 float slowdownFactor = Mathf.SmoothStep(0.2f, 1.0f, distanceToGap / 3.0f);
                 dynamicForce *= slowdownFactor;
 
-                // 强力破阻补偿
                 if (currentSpeed < 2.0f && distanceToGap > 0.01f)
                 {
                     float compMultiplier = Mathf.Clamp01(distanceToGap / 1.5f);
@@ -168,9 +204,6 @@ public class CharacterActuator : MonoBehaviour
 
             LimitHorizontalSpeed();
 
-            // ====== 🧠 动态拟人化刹车（去硬编码重构） ======
-            // 只有当大脑要求的 strength 比较温和（< 1.2），说明是一次精准的、小心翼翼的接近（如抓取物品）
-            // 此时我们才启动高精度的平滑刹车插值。如果 strength 很高（如冲锋打狼），则允许物理惯性冲入死线！
             if (strength < 1.2f)
             {
                 float safeArrivalSpeed = Mathf.Clamp(distanceToGap * 3.0f, 0.2f, maxHorizontalSpeed);
@@ -179,13 +212,24 @@ public class CharacterActuator : MonoBehaviour
                     rb.linearVelocity = Vector3.MoveTowards(rb.linearVelocity, direction * safeArrivalSpeed, brakeForce * Time.deltaTime * 1.5f);
                 }
             }
+            // =====================================================================
 
             timer += Time.deltaTime;
             yield return null;
         }
 
-        // 物理收尾静止
         rb.linearVelocity = Vector3.zero;
+        rb.angularVelocity = Vector3.zero;
+
+        if (timer >= maxTime)
+        {
+            float finalDist = Vector3.Distance(transform.position, target.transform.position);
+            Debug.LogWarning($"<color=red>[APPROACH] ⚠️ 达到 {maxTime}s 安全帽强制结束 → {targetId}，最终距离: {finalDist:F2}m</color>");
+        }
+        else
+        {
+            Debug.Log($"<color=green>[APPROACH] 正常结束 → {targetId}，总耗时 {timer:F1}s</color>");
+        }
     }
 
     private IEnumerator MoveDirectionRoutine(float argX, float argZ, float strength = 1f)

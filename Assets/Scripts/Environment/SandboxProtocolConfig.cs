@@ -17,7 +17,7 @@ public enum PersistentIntent
     ThreatElimination   // 消除威胁
 }
 
-// ==================== 新增：可扩展的行为策略 ====================
+// ==================== 可扩展的行为策略 ====================
 [System.Serializable]
 public class BehaviorStrategy
 {
@@ -35,9 +35,25 @@ public class BehaviorStrategy
     public string executionGuidance;
 }
 
+// ==================== 物体物理交互配置 ====================
+[System.Serializable]
+public class PhysicalInteractionConfig
+{
+    public SemanticType type;
+
+    [Tooltip("APPROACH 时默认停止距离（米）")]
+    public float desiredApproachDistance = 0.65f;
+
+    [Tooltip("GRAB 允许的最大抓取距离")]
+    public float maxGraspDistance = 1.25f;
+
+    [Tooltip("给AI的描述（可选）")]
+    public string descriptionForAI = "";
+}
+
 public static class SandboxProtocolConfig
 {
-    // ==================== 原有物体机制（完全保留） ====================
+    // ==================== 原有物体机制 ====================
     private static readonly Dictionary<SemanticType, string> MechanismDescriptions = new Dictionary<SemanticType, string>()
     {
         { SemanticType.Food,   "这是一个可食用的静态有机刚体。如果你的坐标与它重合（距离小于0.5米）并执行 USE_ITEM，它将被你的身体消化，为你恢复15点饱食度。" },
@@ -45,7 +61,7 @@ public static class SandboxProtocolConfig
         { SemanticType.Enemy,  "这是一只具有高度敌意、处于游荡状态的动态生物。它会持续追踪并撕咬靠近的无武器目标。它害怕高强度的物理撞击。" }
     };
 
-    // ==================== 新增：行为策略字典（核心，可自由扩展） ====================
+    // ==================== 行为策略 ====================
     private static readonly List<BehaviorStrategy> BehaviorStrategies = new List<BehaviorStrategy>()
     {
         new BehaviorStrategy
@@ -71,12 +87,37 @@ public static class SandboxProtocolConfig
         }
     };
 
+    // ==================== 物理交互配置表（核心） ====================
+    private static readonly List<PhysicalInteractionConfig> InteractionConfigs = new List<PhysicalInteractionConfig>()
+    {
+        new PhysicalInteractionConfig
+        {
+            type = SemanticType.Food,
+            desiredApproachDistance = 0.85f,
+            maxGraspDistance = 1.25f,
+            descriptionForAI = "这是一个小型食物，建议靠近到0.85米以内再抓取。"
+        },
+        new PhysicalInteractionConfig
+        {
+            type = SemanticType.Weapon,
+            desiredApproachDistance = 0.60f,
+            maxGraspDistance = 1.1f,
+            descriptionForAI = "这是一根长条武器，建议靠近到0.6米以内抓取。"
+        },
+        new PhysicalInteractionConfig
+        {
+            type = SemanticType.Enemy,
+            desiredApproachDistance = 1.8f,
+            maxGraspDistance = 2.5f,
+            descriptionForAI = "敌人危险，建议保持1.8米以上距离进行攻击。"
+        }
+    };
+
     // ==================== 公共查询方法 ====================
     public static string GetMechanismDescription(SemanticType type)
     {
         return MechanismDescriptions.TryGetValue(type, out string desc)
-            ? desc
-            : "未知物理实体，未定义其运作机制。";
+            ? desc : "未知物理实体，未定义其运作机制。";
     }
 
     public static BehaviorStrategy GetStrategy(string goalText)
@@ -88,10 +129,21 @@ public static class SandboxProtocolConfig
             s.keywords.ToLower().Split('|').Any(k => lower.Contains(k)));
     }
 
-    // 给 Prompt 使用：返回所有行为指导
+    public static PhysicalInteractionConfig GetInteractionConfig(SemanticType type)
+    {
+        return InteractionConfigs.FirstOrDefault(c => c.type == type)
+               ?? new PhysicalInteractionConfig { type = type, desiredApproachDistance = 0.65f, maxGraspDistance = 1.25f };
+    }
+
     public static string GetAllBehaviorGuidance()
     {
         return string.Join("\n", BehaviorStrategies.Select(s =>
             $"• {s.intentType}: {s.descriptionToAI} 执行建议：{s.executionGuidance}"));
+    }
+
+    public static string GetAllInteractionGuidance()
+    {
+        return string.Join("\n", InteractionConfigs.Select(c =>
+            $"• {c.type}: 建议靠近距离 {c.desiredApproachDistance:F2}m，最大抓取距离 {c.maxGraspDistance:F2}m。{c.descriptionForAI}"));
     }
 }
