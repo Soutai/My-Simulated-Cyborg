@@ -142,10 +142,10 @@ public class CharacterActuator : MonoBehaviour
             float currentSpeed = rb.linearVelocity.magnitude;
 
             // 诊断日志
-            if (timer % 0.25f < Time.deltaTime * 1.05f)
-            {
-                Debug.Log($"<color=white>[APPROACH] 实时状态 | 时间:{timer:F2}s | 距离:{currentDistance:F2}m | Gap:{distanceToGap:F2}m | 速度:{currentSpeed:F2} | 配置距离:{desiredDistance:F2}</color>");
-            }
+            //if (timer % 0.25f < Time.deltaTime * 1.05f)
+            //{
+            //    Debug.Log($"<color=white>[APPROACH] 实时状态 | 时间:{timer:F2}s | 距离:{currentDistance:F2}m | Gap:{distanceToGap:F2}m | 速度:{currentSpeed:F2} | 配置距离:{desiredDistance:F2}</color>");
+            //}
 
             // 退出条件（使用配置的距离 + 合理容差）
             if (currentDistance <= desiredDistance + 0.18f && currentSpeed < 1.3f)
