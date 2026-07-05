@@ -97,9 +97,9 @@ public class NPCAttributes : MonoBehaviour
     /// <summary>
     /// 🌟 升级版进食结算（支持接收具体的食物对象并销毁）
     /// </summary>
-    public void ConsumeFood(GameObject foodTarget = null)
+    public void ConsumeFood(GameObject foodTarget, float restoreAmount)
     {
-        satiety = Mathf.Clamp(satiety + 15f, 0f, 100f);
+        satiety = Mathf.Clamp(satiety + restoreAmount, 0f, 100f);
         ResetColor();
 
         // 动态识别吃掉的水果对象名称

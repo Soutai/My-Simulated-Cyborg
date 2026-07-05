@@ -139,19 +139,13 @@ public class CharacterActuator : MonoBehaviour
         }
 
         // ==================== 【新配置系统】优先读取 ====================
+        // 找不到 SemanticObject 时不再瞎猜类型，直接用中性的默认停止距离
         float desiredDistance = 0.65f;
         var semantic = target.GetComponent<SemanticObject>();
 
         if (semantic != null)
         {
             desiredDistance = semantic.GetDesiredApproachDistance();
-        }
-        else
-        {
-            // 兜底：通过 SemanticType 查询全局配置
-            var config = SandboxProtocolConfig.GetInteractionConfig(SemanticType.Food); // 默认Food
-                                                                                        // 如果能从名字或其他方式推断类型，可以进一步优化
-            desiredDistance = config.desiredApproachDistance;
         }
 
         float maxTime = (strength > 1.2f) ? 4.0f : 5.0f;
@@ -322,51 +316,53 @@ public class CharacterActuator : MonoBehaviour
         string sanitizedHand = (hand ?? "").ToUpper().Trim();
         GameObject activeObject = (sanitizedHand == "LEFT") ? leftHandObject : rightHandObject;
 
-        if (activeObject != null)
+        if (activeObject == null)
         {
-            SemanticObject semantic = activeObject.GetComponent<SemanticObject>();
-            SemanticType? heldType = semantic != null ? semantic.semanticType : (SemanticType?)null;
-
-            if (heldType == SemanticType.Weapon)
-            {
-                Debug.Log($"<color=yellow>[物理交互] 原始人挥舞了【{sanitizedHand}手】的{activeObject.name}！</color>");
-                Collider[] hits = Physics.OverlapSphere(transform.position + transform.forward * 1f, 2f);
-                foreach (var h in hits)
-                {
-                    if (h.CompareTag("Enemy"))
-                    {
-                        Rigidbody enemyRb = h.GetComponent<Rigidbody>();
-                        if (enemyRb)
-                            enemyRb.AddForce((h.transform.position - transform.position).normalized * 30f, ForceMode.Impulse);
-                    }
-                }
-                return;
-            }
-
-            if (heldType == SemanticType.Food)
-            {
-                NPCAttributes attr = GetComponent<NPCAttributes>();
-                if (attr) attr.ConsumeFood(activeObject);
-
-                if (sanitizedHand == "LEFT") leftHandObject = null;
-                else rightHandObject = null;
-
-                Destroy(activeObject);
-                return;
-            }
+            Debug.LogWarning($"[USE_ITEM] 失败：【{sanitizedHand}手】空无一物，必须先 GRAB 才能使用");
+            return;
         }
 
-        Collider[] closeObjects = Physics.OverlapSphere(transform.position, 0.8f);
-        foreach (var col in closeObjects)
-        {
-            if (col.CompareTag("Food"))
-            {
-                NPCAttributes attr = GetComponent<NPCAttributes>();
-                if (attr) attr.ConsumeFood(col.gameObject);
+        SemanticObject semantic = activeObject.GetComponent<SemanticObject>();
+        if (semantic == null) return;
 
-                Destroy(col.gameObject);
+        ApplyUseEffect(PhysicsProtocolConfig.GetUseEffect(semantic.semanticType), activeObject, sanitizedHand);
+    }
+
+    /// <summary>
+    /// 🌟 通用 USE_ITEM 效果分发器：只认配置中心下发的效果类型和参数，
+    /// 不针对任何具体 SemanticType 写 if-else —— 物体是什么效果，完全由 PhysicsProtocolConfig 决定。
+    /// </summary>
+    private void ApplyUseEffect(PhysicsProtocolConfig.ItemUseEffect effect, GameObject target, string hand)
+    {
+        switch (effect.kind)
+        {
+            case PhysicsProtocolConfig.UseEffectKind.SweepAttack:
+                Debug.Log($"<color=yellow>[物理交互] 原始人挥舞了【{hand}手】的{target.name}！</color>");
+                Collider[] hits = Physics.OverlapSphere(transform.position + transform.forward * effect.forwardOffset, effect.effectRadius);
+                foreach (var h in hits)
+                {
+                    if (h.CompareTag(effect.affectedTag))
+                    {
+                        Rigidbody targetRb = h.GetComponent<Rigidbody>();
+                        if (targetRb)
+                            targetRb.AddForce((h.transform.position - transform.position).normalized * effect.knockbackForce, ForceMode.Impulse);
+                    }
+                }
                 break;
-            }
+
+            case PhysicsProtocolConfig.UseEffectKind.Consume:
+                NPCAttributes attr = GetComponent<NPCAttributes>();
+                if (attr) attr.ConsumeFood(target, effect.satietyRestore);
+
+                if (leftHandObject == target) leftHandObject = null;
+                else if (rightHandObject == target) rightHandObject = null;
+
+                Destroy(target);
+                break;
+
+            case PhysicsProtocolConfig.UseEffectKind.None:
+            default:
+                break;
         }
     }
 
