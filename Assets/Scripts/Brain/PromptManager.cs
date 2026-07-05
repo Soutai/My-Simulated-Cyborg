@@ -7,7 +7,7 @@ public class PromptManager : MonoBehaviour
     /// </summary>
     public string GeneratePhysicsEnginePrompt(
         float satiety,
-        string personality,
+        NpcPersonality personality,
         string currentTimeStr,
         string serializedRadarJson,
         string leftHandItem,
@@ -36,7 +36,8 @@ public class PromptManager : MonoBehaviour
             "- APPLY_FORCE: 必须提供 arg_x 和 arg_z！（arg_x >0=右, <0=左 | arg_z >0=前, <0=后，建议力度 2.0~4.0）\n" +
             "- APPROACH: 靠近某个物体（推荐使用，AI只需给出 target_id）\n" +
             "- MOVE_DIRECTION: 朝指定方向移动一段距离（需 arg_x、arg_z、strength）\n" +
-            "- GRAB / RELEASE / USE_ITEM: 必须包含 \"hand\" 字段（\"Left\" 或 \"Right\"）！\n\n" +
+            "- GRAB / RELEASE / USE_ITEM: 必须包含 \"hand\" 字段（\"Left\" 或 \"Right\"）！\n" +
+            "- GRAB: 除了 hand，还必须提供 \"target_id\"，明确指出要抓取的具体物体，不要因为觉得目标\"很明显\"就省略！\n\n" +
 
             "## 2. 当前感知\n" +
             $"{serializedRadarJson}\n\n" +
@@ -87,21 +88,22 @@ public class PromptManager : MonoBehaviour
     /// <summary>
     /// 🧠 机制语义化映射：不包含 If-Else 决策，只向大模型输入个性的内在物理法则和欲望代价限制。
     /// </summary>
-    private string GetPersonalityRules(string personality)
+    private string GetPersonalityRules(NpcPersonality personality)
     {
-        switch (personality.ToUpper().Trim())
+        switch (personality)
         {
-            case "GLUTTONS":
+            case NpcPersonality.GLUTTONS:
                 return "- 【性格本能-贪吃者(GLUTTONS)】：你对食物有着近乎病态的执念和成瘾性。在你的本能规则里，**只要你的饱食度低于 95.0，你的全部思维就会被‘对食物的强烈渴望’所支配**。\n" +
                        "  - 如果当前感知区域内【存在食物】：你必须无条件以最高优先级去靠近并吃掉它，甚至可以无视身边的危险。\n" +
                        "  - 如果当前感知区域内【没有食物】：**你绝不能盲目闲逛，你当前的核心目标（goal）必须定位为‘大范围地毯式搜寻食物(Fruit/Food)’**。你执行的所有探索和长距离移动，其核心动机都必须是为了翻找食物，而不是为了寻找恶狼或进行其他任务。";
 
-            case "RISK_AVOIDANT":
+            case NpcPersonality.RISK_AVOIDANT:
                 return "- 【性格本能-极度怕死(RISK_AVOIDANT)】：你极度缺乏安全感，对物理伤害有着天然的恐惧。在你的本能规则里，**在双手没有任何武器（Weapon/Stick）保护的情况下，直接暴露在敌人（Enemy/Wolf）的攻击范围内会让你陷入极度惊恐**。你的无意识逻辑会迫使你优先远离威胁，或者不惜一切代价优先奔向最近的武器，在手无寸铁时正面迎敌完全违背你的生物本能。";
 
-            case "RISK_TAKER":
+            case NpcPersonality.RISK_TAKER:
                 return "- 【性格本能-亡命之徒(RISK_TAKER)】：你渴望风险带来的多巴胺刺激，体内充斥着极强的攻击性。在你的本能规则里，**敌人的出现不仅不是威胁，反而是最高优先级的猎物**。你会主动无视轻微的饥饿与疲劳，甚至在空手时也敢于向着危险方向正面逼近，在夺取武器或者发起冲锋前，任何安逸的行为（如进食或盲目闲逛）都会被你的狂热本能所排斥。";
 
+            case NpcPersonality.NEUTRAL:
             default:
                 return "- 【性格本能-理性中立】：你是一个纯粹基于物理得失计算的理性个体，没有特别的本能偏好。你可以完全根据常识、当前饱食度以及威胁的物理距离，自由且冷静地权衡生存策略。";
         }

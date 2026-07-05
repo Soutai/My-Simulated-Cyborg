@@ -11,13 +11,16 @@ public class CharacterActuator : MonoBehaviour
     public float maxHorizontalSpeed = 6f;
     public float brakeForce = 8f;
 
-    [Header("转向参数")]
-    [Tooltip("朝向水平移动方向的转身速度（度/秒）")]
-    public float rotationSpeed = 720f;
-    [Tooltip("低于此水平速度不再转向，防止静止时抖动")]
-    public float minSpeedToRotate = 0.15f;
+    [Header("朝向参数")]
+    [Tooltip("低于此水平速度不再更新朝向，防止静止时抖动")]
+    public float minSpeedToUpdateFacing = 0.15f;
 
     private Rigidbody rb;
+
+    // 🌟 纯逻辑朝向：只记录数据供 USE_ITEM 挥击判定方向使用，不用物理旋转身体。
+    // 之前用 rb.MoveRotation 真的转身会莫名其妙拖慢移动速度，而胶囊体本身又没有方向标记，
+    // 视觉上根本看不出转身效果，所以物理旋转纯属白白负担，直接砍掉。
+    private Vector3 facingDirection = Vector3.forward;
 
     private GameObject leftHandObject = null;
     private GameObject rightHandObject = null;
@@ -41,22 +44,19 @@ public class CharacterActuator : MonoBehaviour
 
     void FixedUpdate()
     {
-        RotateTowardsMovementDirection();
+        UpdateFacingDirection();
     }
 
     /// <summary>
-    /// 🌟 让身体持续朝向自己的水平移动方向平滑转身。
-    /// 纯粹由物理速度驱动，不针对任何具体原语特殊处理：
-    /// APPROACH/MOVE_DIRECTION 靠近目标的过程本身就会让身体自然转向目标方向，
-    /// 挥棍等依赖 transform.forward 的判定也因此始终朝向刚才移动的方向。
+    /// 🌟 只更新逻辑朝向，不触碰刚体旋转。USE_ITEM 挥击判定用这个方向而非 transform.forward，
+    /// 这样身体一直是"哪边走得多就代表朝哪边"，不需要真的转动物理刚体。
     /// </summary>
-    private void RotateTowardsMovementDirection()
+    private void UpdateFacingDirection()
     {
         Vector3 horizontalVelocity = new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z);
-        if (horizontalVelocity.magnitude < minSpeedToRotate) return;
+        if (horizontalVelocity.magnitude < minSpeedToUpdateFacing) return;
 
-        Quaternion targetRotation = Quaternion.LookRotation(horizontalVelocity.normalized, Vector3.up);
-        rb.MoveRotation(Quaternion.RotateTowards(rb.rotation, targetRotation, rotationSpeed * Time.fixedDeltaTime));
+        facingDirection = horizontalVelocity.normalized;
     }
 
     public void StopAllPhysicalMovement()
@@ -338,7 +338,7 @@ public class CharacterActuator : MonoBehaviour
         {
             case PhysicsProtocolConfig.UseEffectKind.SweepAttack:
                 Debug.Log($"<color=yellow>[物理交互] 原始人挥舞了【{hand}手】的{target.name}！</color>");
-                Collider[] hits = Physics.OverlapSphere(transform.position + transform.forward * effect.forwardOffset, effect.effectRadius);
+                Collider[] hits = Physics.OverlapSphere(transform.position + facingDirection * effect.forwardOffset, effect.effectRadius);
                 foreach (var h in hits)
                 {
                     if (h.CompareTag(effect.affectedTag))
@@ -352,7 +352,7 @@ public class CharacterActuator : MonoBehaviour
 
             case PhysicsProtocolConfig.UseEffectKind.Consume:
                 NPCAttributes attr = GetComponent<NPCAttributes>();
-                if (attr) attr.ConsumeFood(target, effect.satietyRestore);
+                if (attr) attr.RestoreSatiety(target, effect.satietyRestore);
 
                 if (leftHandObject == target) leftHandObject = null;
                 else if (rightHandObject == target) rightHandObject = null;
@@ -388,17 +388,12 @@ public class CharacterActuator : MonoBehaviour
 
     private IEnumerator PerformGrab(string targetId, string hand)
     {
-        if (string.IsNullOrEmpty(targetId))
-        {
-            Debug.LogWarning($"[GRAB] 失败：targetId 为空");
-            yield break;
-        }
-
         string sanitizedHand = (hand ?? "").ToUpper().Trim();
         GameObject activeObject = (sanitizedHand == "LEFT") ? leftHandObject : rightHandObject;
+        bool hasExplicitTarget = !string.IsNullOrEmpty(targetId);
 
         // ==================== 诊断日志 ====================
-        Debug.Log($"<color=cyan>[GRAB 开始诊断] 尝试用【{sanitizedHand}手】抓取 {targetId}</color>");
+        Debug.Log($"<color=cyan>[GRAB 开始诊断] 尝试用【{sanitizedHand}手】抓取 {(hasExplicitTarget ? targetId : "(未指定 target_id，就近搜索可抓取物体)")}</color>");
 
         if (activeObject != null)
         {
@@ -406,7 +401,11 @@ public class CharacterActuator : MonoBehaviour
             yield break;
         }
 
-        GameObject target = WorldObjectRegistry.Find(targetId) ?? WorldObjectRegistry.FindFuzzy(targetId);
+        // 🌟 容错：大模型偶尔会漏填 target_id（比如刚 APPROACH 完觉得"该抓什么很明显"），
+        // 这时退化成抓取双手可及范围内最近的可抓取物体，而不是直接判定失败。
+        GameObject target = hasExplicitTarget
+            ? (WorldObjectRegistry.Find(targetId) ?? WorldObjectRegistry.FindFuzzy(targetId))
+            : FindNearestGraspableObject();
 
         if (target != null)
         {
@@ -416,7 +415,7 @@ public class CharacterActuator : MonoBehaviour
             var semantic = target.GetComponent<SemanticObject>();
             if (semantic != null) maxGraspDistance = semantic.GetMaxGraspDistance();
 
-            Debug.Log($"<color=cyan>[GRAB 距离诊断] {targetId} | 当前实际距离: {currentDist:F2}m | 期望抓取距离 <= {maxGraspDistance:F2}m</color>");
+            Debug.Log($"<color=cyan>[GRAB 距离诊断] {target.name} | 当前实际距离: {currentDist:F2}m | 期望抓取距离 <= {maxGraspDistance:F2}m</color>");
 
             if (currentDist <= maxGraspDistance)
             {
@@ -446,12 +445,37 @@ public class CharacterActuator : MonoBehaviour
             }
             else
             {
-                Debug.LogWarning($"[GRAB] 失败：{targetId} 距离过远 ({currentDist:F2}m > {maxGraspDistance:F2}m)");
+                Debug.LogWarning($"[GRAB] 失败：{target.name} 距离过远 ({currentDist:F2}m > {maxGraspDistance:F2}m)");
             }
         }
         else
         {
-            Debug.LogWarning($"[物理原语] GRAB 失败：找不到目标 {targetId}");
+            Debug.LogWarning(hasExplicitTarget
+                ? $"[物理原语] GRAB 失败：找不到目标 {targetId}"
+                : "[物理原语] GRAB 失败：附近没有可抓取的物体");
         }
+    }
+
+    /// <summary>
+    /// target_id 缺省时的兜底：在注册表里找双手可及范围内最近的可抓取物体。
+    /// </summary>
+    private GameObject FindNearestGraspableObject()
+    {
+        GameObject nearest = null;
+        float nearestDist = float.MaxValue;
+
+        foreach (var semantic in WorldObjectRegistry.All())
+        {
+            if (semantic == null) continue;
+
+            float dist = Vector3.Distance(transform.position, semantic.transform.position);
+            if (dist <= semantic.GetMaxGraspDistance() && dist < nearestDist)
+            {
+                nearestDist = dist;
+                nearest = semantic.gameObject;
+            }
+        }
+
+        return nearest;
     }
 }

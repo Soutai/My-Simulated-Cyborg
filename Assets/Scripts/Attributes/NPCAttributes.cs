@@ -1,17 +1,38 @@
 using UnityEngine;
 using UnityEngine.UI; // 👈 既存保持：确保能使用 Slider 和 Text
 
+/// <summary>
+/// NPC 性格/本能倾向。用枚举而非字符串，避免手打拼写错误导致悄无声息地退化成默认性格。
+/// </summary>
+public enum NpcPersonality
+{
+    GLUTTONS,       // 贪吃者：只要不饱就想吃东西
+    RISK_AVOIDANT,  // 极度怕死：优先防身
+    RISK_TAKER,     // 亡命之徒：饿了就要吃，敌人是猎物
+    NEUTRAL         // 理性中立：纯粹基于物理得失计算
+}
+
 public class NPCAttributes : MonoBehaviour
 {
+    public const float MaxSatiety = 100f;
+
     [Header("生存属性 (0 - 100)")]
     [Tooltip("100表示彻底饱腹，0表示彻底饿死。替代原有的饥饿值逻辑")]
-    public float satiety = 100f;
+    [SerializeField] private float satiety = MaxSatiety;
+
+    /// <summary>
+    /// 当前饱食度。读写统一走这个属性，赋值时自动夹在 [0, MaxSatiety] 区间内，
+    /// 杜绝外部脚本绕过边界直接写坏数值。
+    /// </summary>
+    public float Satiety
+    {
+        get => satiety;
+        private set => satiety = Mathf.Clamp(value, 0f, MaxSatiety);
+    }
 
     [Header("性格/本能倾向设定")]
-    [Tooltip("RISK_AVOIDANT: 极度怕死，优先防身; " +
-             "RISK_TAKER: 亡命之徒，饿了就要吃；" +
-             "GLUTTONS: 贪吃的人，只要不饱就想吃东西；")]
-    public string personality = "GLUTTONS";
+    [Tooltip("直接在下拉菜单中选择，无需手动拼写字符串")]
+    public NpcPersonality personality = NpcPersonality.GLUTTONS;
 
     [Header("UI 绑定")]
     public Slider satietySlider;
@@ -21,6 +42,12 @@ public class NPCAttributes : MonoBehaviour
     [Tooltip("游戏世界中每过去一个小时，自动跌落多少点饱食度")]
     public float satietyLossPerHour = 10f;
 
+    [Header("濒死视觉警示")]
+    [Tooltip("饱食度低于此值时，身体变色作为濒死警示")]
+    public float lowSatietyThreshold = 5f;
+    [Tooltip("濒死时的警示颜色")]
+    public Color lowSatietyColor = Color.black;
+
     private float initialSatiety;
     private Vector3 startPosition;
     private Color startColor;
@@ -29,33 +56,33 @@ public class NPCAttributes : MonoBehaviour
     void Awake()
     {
         startPosition = transform.position;
-        myRenderer = GetComponent<Renderer>();
+        // 🌟 用 GetComponentInChildren 而非 GetComponent：即便以后模型挂在子物体上也能找到
+        myRenderer = GetComponentInChildren<Renderer>();
         if (myRenderer != null) startColor = myRenderer.material.color;
-        initialSatiety = satiety;
+        initialSatiety = Satiety;
 
         if (satietySlider != null)
         {
             satietySlider.minValue = 0;
-            satietySlider.maxValue = 100;
+            satietySlider.maxValue = MaxSatiety;
         }
     }
 
     void Update()
     {
         // 生态自减核心算法
-        if (TimeManager.Instance != null && satiety > 0)
+        if (TimeManager.Instance != null && Satiety > 0)
         {
             float lossPerSecond = satietyLossPerHour / TimeManager.Instance.realSecondsPerHour;
-            satiety -= Time.deltaTime * lossPerSecond;
-            satiety = Mathf.Clamp(satiety, 0f, 100f);
+            Satiety -= Time.deltaTime * lossPerSecond;
         }
 
         UpdateUI();
 
-        // 既存兼容逻辑：当饱食度接近崩溃(<=5)相当于以前的饥饿度达95以上，触发身体发黑表现
-        if (satiety <= 5f)
+        // 既存兼容逻辑：饱食度接近崩溃时，触发身体变色表现
+        if (Satiety <= lowSatietyThreshold)
         {
-            SetColor(Color.black);
+            SetColor(lowSatietyColor);
         }
     }
 
@@ -64,13 +91,13 @@ public class NPCAttributes : MonoBehaviour
         // 1. 刷新进度条
         if (satietySlider != null)
         {
-            satietySlider.value = satiety;
+            satietySlider.value = Satiety;
         }
 
         // 2. 🌟新追加：动态计算百分比并刷新文本（Mathf.CeilToInt 向上取整防止显示0%但其实还没挂）
         if (satietyPercentageText != null)
         {
-            int percent = Mathf.CeilToInt(satiety);
+            int percent = Mathf.CeilToInt(Satiety);
             satietyPercentageText.text = percent + "%";
         }
     }
@@ -79,7 +106,7 @@ public class NPCAttributes : MonoBehaviour
     public void ResetAttributes()
     {
         transform.position = startPosition;
-        satiety = initialSatiety;
+        Satiety = initialSatiety;
         ResetColor();
     }
 
@@ -95,15 +122,15 @@ public class NPCAttributes : MonoBehaviour
     }
 
     /// <summary>
-    /// 🌟 升级版进食结算（支持接收具体的食物对象并销毁）
+    /// 🌟 通用消耗结算：任何被 PhysicsProtocolConfig 标记为 Consume 效果的物体都会调用这里，
+    /// 不只是食物，所以方法名和实现都不对具体物体类型做假设。
     /// </summary>
-    public void ConsumeFood(GameObject foodTarget, float restoreAmount)
+    public void RestoreSatiety(GameObject source, float amount)
     {
-        satiety = Mathf.Clamp(satiety + restoreAmount, 0f, 100f);
+        Satiety += amount;
         ResetColor();
 
-        // 动态识别吃掉的水果对象名称
-        string foodName = foodTarget != null ? foodTarget.name : "食物";
-        Debug.Log($"<color=#00FF00>[生存状态] 🍖 成功进食，[{foodName}] 已被消灭，饱食度重回巅峰！</color>");
+        string sourceName = source != null ? source.name : "未知来源";
+        Debug.Log($"<color=#00FF00>[生存状态] 🍖 成功进食，[{sourceName}] 已被消灭，饱食度重回巅峰！</color>");
     }
 }

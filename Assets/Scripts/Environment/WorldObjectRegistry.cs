@@ -45,4 +45,12 @@ public static class WorldObjectRegistry
         }
         return null;
     }
+
+    /// <summary>
+    /// 枚举当前所有已注册的语义物体，供"没有指定具体 target_id 时就近搜索"这类兜底逻辑使用。
+    /// </summary>
+    public static IEnumerable<SemanticObject> All()
+    {
+        return registry.Values;
+    }
 }

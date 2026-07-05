@@ -148,8 +148,8 @@ public class AIBrainController : MonoBehaviour
         if (isThinking) return;
 
         string radarJson = radar.ScanEnvironmentToSemanticJson();
-        float currentSatiety = attributes != null ? attributes.satiety : 100f;
-        string personality = attributes != null ? attributes.personality : "DEFAULT";
+        float currentSatiety = attributes != null ? attributes.Satiety : 100f;
+        NpcPersonality personality = attributes != null ? attributes.personality : NpcPersonality.NEUTRAL;
         string timeStr = TimeManager.Instance != null ? TimeManager.Instance.GetCurrentTimeString() : "00:00";
 
         string finalPrompt = promptManager.GeneratePhysicsEnginePrompt(
