@@ -17,6 +17,9 @@ public class LocalMotorController : MonoBehaviour
 
     private string savedBackBufferGoal = "无";
 
+    // 🌟 复用缓冲区，避免每帧 OverlapSphere 产生 GC 分配
+    private readonly Collider[] anchorOverlapBuffer = new Collider[32];
+
     void Awake()
     {
         actuator = GetComponent<CharacterActuator>();
@@ -27,6 +30,12 @@ public class LocalMotorController : MonoBehaviour
             // 监听执行器物理连招完工通知
             actuator.OnSequenceFinished += OnCurrentSequenceFinished;
         }
+    }
+
+    void OnDestroy()
+    {
+        if (actuator != null)
+            actuator.OnSequenceFinished -= OnCurrentSequenceFinished;
     }
 
     // LocalMotorController.cs 内部追加
@@ -63,10 +72,11 @@ public class LocalMotorController : MonoBehaviour
         PerceptionRadar radarComponent = GetComponent<PerceptionRadar>();
         if (radarComponent == null) return false;
 
-        // 🌟 利用 Unity 的 Physics 探测当前感知半径内的物体
-        Collider[] hitColliders = Physics.OverlapSphere(transform.position, radarComponent.perceptionRadius);
-        foreach (var col in hitColliders)
+        // 🌟 利用 Unity 的 Physics 探测当前感知半径内的物体（复用缓冲区，避免 GC 分配）
+        int hitCount = Physics.OverlapSphereNonAlloc(transform.position, radarComponent.perceptionRadius, anchorOverlapBuffer);
+        for (int i = 0; i < hitCount; i++)
         {
+            var col = anchorOverlapBuffer[i];
             if (col.gameObject == this.gameObject) continue;
 
             // 获取物体的通用语义标签组件

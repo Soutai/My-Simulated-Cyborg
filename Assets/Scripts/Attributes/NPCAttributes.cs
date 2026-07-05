@@ -99,7 +99,7 @@ public class NPCAttributes : MonoBehaviour
     /// </summary>
     public void ConsumeFood(GameObject foodTarget = null)
     {
-        satiety += 10f;
+        satiety = Mathf.Clamp(satiety + 15f, 0f, 100f);
         ResetColor();
 
         // 动态识别吃掉的水果对象名称

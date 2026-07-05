@@ -16,6 +16,18 @@ public class SemanticObject : MonoBehaviour
     [Tooltip("GRAB 允许的最大抓取距离")]
     public float maxGraspDistance = 1.25f;
 
+    void Start()
+    {
+        // 🌟 用 Start 而非 Awake 注册：确保像 EnvironmentManager 那样"先 Instantiate 再改名字"的物体，
+        // 已经用上了最终名字（大模型据此下发的 target_id）之后才登记进注册表。
+        WorldObjectRegistry.Register(this);
+    }
+
+    void OnDestroy()
+    {
+        WorldObjectRegistry.Unregister(this);
+    }
+
     /// <summary>
     /// 开放一个只读属性，外界（如雷达）调用时，物体自己就能报出自己的物理机制说明
     /// </summary>

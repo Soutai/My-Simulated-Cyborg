@@ -32,6 +32,9 @@ public class AIBrainController : MonoBehaviour
     [Header("🧠 小脑本能中断阈值")]
     public float dangerThreshold = 2.5f;
 
+    // 🌟 复用缓冲区，避免每个物理帧的 OverlapSphere 产生 GC 分配
+    private readonly Collider[] dangerOverlapBuffer = new Collider[32];
+
     // AIBrainController.cs 追加对外接口
     public string CurrentInterruptAnchor => currentInterruptAnchor;
 
@@ -63,6 +66,15 @@ public class AIBrainController : MonoBehaviour
         OnPhysicsBrainTick();
     }
 
+    void OnDestroy()
+    {
+        if (TimeManager.Instance != null)
+            TimeManager.Instance.OnAITick -= OnPhysicsBrainTick;
+
+        if (actuator != null)
+            actuator.OnGrabSuccess -= HandleGrabSuccess;
+    }
+
     void FixedUpdate()
     {
         // 每帧动态计算小脑雷达感知范围内的环境危险密度
@@ -89,11 +101,12 @@ public class AIBrainController : MonoBehaviour
     {
         if (radar == null) return 0f;
 
-        Collider[] hitColliders = Physics.OverlapSphere(transform.position, radar.perceptionRadius);
+        int hitCount = Physics.OverlapSphereNonAlloc(transform.position, radar.perceptionRadius, dangerOverlapBuffer);
         float totalDanger = 0f;
 
-        foreach (var col in hitColliders)
+        for (int i = 0; i < hitCount; i++)
         {
+            var col = dangerOverlapBuffer[i];
             if (col.gameObject == this.gameObject) continue;
 
             SemanticObject semanticObj = col.GetComponent<SemanticObject>();

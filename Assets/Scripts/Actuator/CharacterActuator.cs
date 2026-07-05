@@ -11,6 +11,12 @@ public class CharacterActuator : MonoBehaviour
     public float maxHorizontalSpeed = 6f;
     public float brakeForce = 8f;
 
+    [Header("转向参数")]
+    [Tooltip("朝向水平移动方向的转身速度（度/秒）")]
+    public float rotationSpeed = 720f;
+    [Tooltip("低于此水平速度不再转向，防止静止时抖动")]
+    public float minSpeedToRotate = 0.15f;
+
     private Rigidbody rb;
 
     private GameObject leftHandObject = null;
@@ -31,6 +37,26 @@ public class CharacterActuator : MonoBehaviour
         rb.constraints = RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
         rb.linearDamping = 2f;
         rb.angularDamping = 5f;
+    }
+
+    void FixedUpdate()
+    {
+        RotateTowardsMovementDirection();
+    }
+
+    /// <summary>
+    /// 🌟 让身体持续朝向自己的水平移动方向平滑转身。
+    /// 纯粹由物理速度驱动，不针对任何具体原语特殊处理：
+    /// APPROACH/MOVE_DIRECTION 靠近目标的过程本身就会让身体自然转向目标方向，
+    /// 挥棍等依赖 transform.forward 的判定也因此始终朝向刚才移动的方向。
+    /// </summary>
+    private void RotateTowardsMovementDirection()
+    {
+        Vector3 horizontalVelocity = new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z);
+        if (horizontalVelocity.magnitude < minSpeedToRotate) return;
+
+        Quaternion targetRotation = Quaternion.LookRotation(horizontalVelocity.normalized, Vector3.up);
+        rb.MoveRotation(Quaternion.RotateTowards(rb.rotation, targetRotation, rotationSpeed * Time.fixedDeltaTime));
     }
 
     public void StopAllPhysicalMovement()
@@ -105,7 +131,7 @@ public class CharacterActuator : MonoBehaviour
 
     private IEnumerator ApproachTargetRoutine(string targetId, float strength = 1f)
     {
-        GameObject target = GameObject.Find(targetId);
+        GameObject target = WorldObjectRegistry.Find(targetId) ?? WorldObjectRegistry.FindFuzzy(targetId);
         if (target == null)
         {
             Debug.LogWarning($"[APPROACH] 找不到目标: {targetId}");
@@ -296,34 +322,38 @@ public class CharacterActuator : MonoBehaviour
         string sanitizedHand = (hand ?? "").ToUpper().Trim();
         GameObject activeObject = (sanitizedHand == "LEFT") ? leftHandObject : rightHandObject;
 
-        if (activeObject != null && activeObject.name.Contains("Stick"))
+        if (activeObject != null)
         {
-            Debug.Log($"<color=yellow>[物理交互] 原始人挥舞了【{sanitizedHand}手】的木棍！</color>");
-            Collider[] hits = Physics.OverlapSphere(transform.position + transform.forward * 1f, 2f);
-            foreach (var h in hits)
+            SemanticObject semantic = activeObject.GetComponent<SemanticObject>();
+            SemanticType? heldType = semantic != null ? semantic.semanticType : (SemanticType?)null;
+
+            if (heldType == SemanticType.Weapon)
             {
-                if (h.CompareTag("Enemy"))
+                Debug.Log($"<color=yellow>[物理交互] 原始人挥舞了【{sanitizedHand}手】的{activeObject.name}！</color>");
+                Collider[] hits = Physics.OverlapSphere(transform.position + transform.forward * 1f, 2f);
+                foreach (var h in hits)
                 {
-                    Rigidbody enemyRb = h.GetComponent<Rigidbody>();
-                    if (enemyRb)
-                        enemyRb.AddForce((h.transform.position - transform.position).normalized * 30f, ForceMode.Impulse);
+                    if (h.CompareTag("Enemy"))
+                    {
+                        Rigidbody enemyRb = h.GetComponent<Rigidbody>();
+                        if (enemyRb)
+                            enemyRb.AddForce((h.transform.position - transform.position).normalized * 30f, ForceMode.Impulse);
+                    }
                 }
+                return;
             }
-            return;
-        }
 
-        if (activeObject != null && (activeObject.name.Contains("Fruit") || activeObject.CompareTag("Food")))
-        {
-            NPCAttributes attr = GetComponent<NPCAttributes>();
-            if (attr) attr.satiety = Mathf.Clamp(attr.satiety + 15f, 0f, 100f);
+            if (heldType == SemanticType.Food)
+            {
+                NPCAttributes attr = GetComponent<NPCAttributes>();
+                if (attr) attr.ConsumeFood(activeObject);
 
-            Debug.Log($"<color=green>[物理交互] 🍎 用【{sanitizedHand}手】吃掉了手里拿着的 {activeObject.name}！</color>");
+                if (sanitizedHand == "LEFT") leftHandObject = null;
+                else rightHandObject = null;
 
-            if (sanitizedHand == "LEFT") leftHandObject = null;
-            else rightHandObject = null;
-
-            Destroy(activeObject);
-            return;
+                Destroy(activeObject);
+                return;
+            }
         }
 
         Collider[] closeObjects = Physics.OverlapSphere(transform.position, 0.8f);
@@ -332,8 +362,7 @@ public class CharacterActuator : MonoBehaviour
             if (col.CompareTag("Food"))
             {
                 NPCAttributes attr = GetComponent<NPCAttributes>();
-                if (attr) attr.satiety = Mathf.Clamp(attr.satiety + 15f, 0f, 100f);
-                Debug.Log($"<color=green>[物理交互] 🍎 消耗了地上的果子进食！</color>");
+                if (attr) attr.ConsumeFood(col.gameObject);
 
                 Destroy(col.gameObject);
                 break;
@@ -381,26 +410,19 @@ public class CharacterActuator : MonoBehaviour
             yield break;
         }
 
-        GameObject target = GameObject.Find(targetId);
-        if (target == null)
-        {
-            var semanticObjs = FindObjectsOfType<SemanticObject>();
-            foreach (var sobj in semanticObjs)
-            {
-                if (sobj.gameObject.name.Contains(targetId) || targetId.Contains(sobj.gameObject.name))
-                {
-                    target = sobj.gameObject;
-                    break;
-                }
-            }
-        }
+        GameObject target = WorldObjectRegistry.Find(targetId) ?? WorldObjectRegistry.FindFuzzy(targetId);
 
         if (target != null)
         {
             float currentDist = Vector3.Distance(transform.position, target.transform.position);
-            Debug.Log($"<color=cyan>[GRAB 距离诊断] {targetId} | 当前实际距离: {currentDist:F2}m | 期望抓取距离 <= 1.2m</color>");
 
-            if (currentDist <= 1.2f)
+            float maxGraspDistance = 1.25f;
+            var semantic = target.GetComponent<SemanticObject>();
+            if (semantic != null) maxGraspDistance = semantic.GetMaxGraspDistance();
+
+            Debug.Log($"<color=cyan>[GRAB 距离诊断] {targetId} | 当前实际距离: {currentDist:F2}m | 期望抓取距离 <= {maxGraspDistance:F2}m</color>");
+
+            if (currentDist <= maxGraspDistance)
             {
                 if (target == leftHandObject || target == rightHandObject)
                 {
@@ -428,7 +450,7 @@ public class CharacterActuator : MonoBehaviour
             }
             else
             {
-                Debug.LogWarning($"[GRAB] 失败：{targetId} 距离过远 ({currentDist:F2}m > 4.2m)");
+                Debug.LogWarning($"[GRAB] 失败：{targetId} 距离过远 ({currentDist:F2}m > {maxGraspDistance:F2}m)");
             }
         }
         else
