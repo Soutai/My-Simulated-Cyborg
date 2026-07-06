@@ -8,6 +8,9 @@ public class PerceptionRadar : MonoBehaviour
     // 🌟【新增】：引入物理执行器组件引用，用作自我状态的清洗过滤
     private CharacterActuator actuator;
 
+    // 🌟 复用缓冲区，避免每次思考调用 OverlapSphere 都产生 GC 分配
+    private readonly Collider[] scanBuffer = new Collider[64];
+
     void Awake()
     {
         actuator = GetComponent<CharacterActuator>();
@@ -15,13 +18,14 @@ public class PerceptionRadar : MonoBehaviour
 
     public string ScanEnvironmentToSemanticJson()
     {
-        Collider[] hitColliders = Physics.OverlapSphere(transform.position, perceptionRadius);
+        int hitCount = Physics.OverlapSphereNonAlloc(transform.position, perceptionRadius, scanBuffer);
         StringBuilder sb = new StringBuilder();
         sb.Append("[\n");
 
         bool isFirst = true;
-        foreach (var col in hitColliders)
+        for (int i = 0; i < hitCount; i++)
         {
+            var col = scanBuffer[i];
             if (col.gameObject == this.gameObject) continue;
 
             // 🌟【双手清洗屏障】：如果这个物体正被自己的左手或右手抓着，它已属于自我躯壳的延伸，直接跳过，防止产生认知死循环！
@@ -38,11 +42,8 @@ public class PerceptionRadar : MonoBehaviour
                 // 计算三维空间相对坐标偏移 (以原始人为坐标原点 0,0,0)
                 Vector3 relativePos = col.transform.position - transform.position;
 
-                // 统一映射转换名字
-                string typeString = "Unknown";
-                if (semanticObj.semanticType == SemanticType.Food) typeString = "Food";
-                else if (semanticObj.semanticType == SemanticType.Weapon) typeString = "Weapon";
-                else if (semanticObj.semanticType == SemanticType.Enemy) typeString = "Enemy";
+                // 枚举名字本身就是 Food/Weapon/Enemy，直接转字符串，不需要手动映射
+                string typeString = semanticObj.semanticType.ToString();
 
                 // 动态获取绝对配置中心对该物体的机制语义化解释
                 string dynamicMechanismRules = semanticObj.MechanismDescription;

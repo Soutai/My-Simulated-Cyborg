@@ -27,14 +27,6 @@ public class PhysicalInteractionConfig
 
 public static class SandboxProtocolConfig
 {
-    // ==================== 原有物体机制 ====================
-    private static readonly Dictionary<SemanticType, string> MechanismDescriptions = new Dictionary<SemanticType, string>()
-    {
-        { SemanticType.Food,   "这是一个可食用的静态有机刚体。必须先靠近并执行 GRAB 将其抓到手中，再执行 USE_ITEM 才能吃掉它，为你恢复15点饱食度。" },
-        { SemanticType.Weapon, "这是一根质地坚硬的长条刚体，可以被抓取。如果你靠近它并执行 GRAB 成功将其握在手中，它的坐标将跟随你。拿着它时执行 USE_ITEM 会向前产生半径2米的横扫物理撞击，可击退并伤害恶狼。" },
-        { SemanticType.Enemy,  "这是一只具有高度敌意、处于游荡状态的动态生物。它会持续追踪并撕咬靠近的无武器目标。它害怕高强度的物理撞击。" }
-    };
-
     // ==================== 物理交互配置表（核心） ====================
     private static readonly List<PhysicalInteractionConfig> InteractionConfigs = new List<PhysicalInteractionConfig>()
     {
@@ -62,10 +54,29 @@ public static class SandboxProtocolConfig
     };
 
     // ==================== 公共查询方法 ====================
+    /// <summary>
+    /// 🌟 机制说明文字里凡是涉及具体数值的地方，都从 PhysicsProtocolConfig 实时读取，
+    /// 不再手写死数字——避免以后调整数值平衡时，说明文字和真实配置各说各话。
+    /// </summary>
     public static string GetMechanismDescription(SemanticType type)
     {
-        return MechanismDescriptions.TryGetValue(type, out string desc)
-            ? desc : "未知物理实体，未定义其运作机制。";
+        switch (type)
+        {
+            case SemanticType.Food:
+            {
+                var effect = PhysicsProtocolConfig.GetUseEffect(SemanticType.Food);
+                return $"这是一个可食用的静态有机刚体。必须先靠近并执行 GRAB 将其抓到手中，再执行 USE_ITEM 才能吃掉它，为你恢复{effect.satietyRestore:F0}点饱食度。";
+            }
+            case SemanticType.Weapon:
+            {
+                var effect = PhysicsProtocolConfig.GetUseEffect(SemanticType.Weapon);
+                return $"这是一根质地坚硬的长条刚体，可以被抓取。如果你靠近它并执行 GRAB 成功将其握在手中，它的坐标将跟随你。拿着它时执行 USE_ITEM 会向前产生半径{effect.effectRadius:F0}米的横扫物理撞击，可击退并伤害{effect.affectedTag}。";
+            }
+            case SemanticType.Enemy:
+                return "这是一只具有高度敌意、处于游荡状态的动态生物。它会持续追踪并撕咬靠近的无武器目标。它害怕高强度的物理撞击。";
+            default:
+                return "未知物理实体，未定义其运作机制。";
+        }
     }
 
     public static PhysicalInteractionConfig GetInteractionConfig(SemanticType type)
