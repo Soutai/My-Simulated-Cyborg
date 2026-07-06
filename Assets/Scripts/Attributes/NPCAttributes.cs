@@ -48,18 +48,14 @@ public class NPCAttributes : MonoBehaviour
     [Tooltip("濒死时的警示颜色")]
     public Color lowSatietyColor = Color.black;
 
-    private float initialSatiety;
-    private Vector3 startPosition;
     private Color startColor;
     private Renderer myRenderer;
 
     void Awake()
     {
-        startPosition = transform.position;
         // 🌟 用 GetComponentInChildren 而非 GetComponent：即便以后模型挂在子物体上也能找到
         myRenderer = GetComponentInChildren<Renderer>();
         if (myRenderer != null) startColor = myRenderer.material.color;
-        initialSatiety = Satiety;
 
         if (satietySlider != null)
         {
@@ -100,14 +96,6 @@ public class NPCAttributes : MonoBehaviour
             int percent = Mathf.CeilToInt(Satiety);
             satietyPercentageText.text = percent + "%";
         }
-    }
-
-    // 重置属性与物理位置
-    public void ResetAttributes()
-    {
-        transform.position = startPosition;
-        Satiety = initialSatiety;
-        ResetColor();
     }
 
     // 改变身体颜色（反馈状态）

@@ -61,13 +61,6 @@ public class TimeManager : MonoBehaviour
             timeText.text = GetCurrentTimeString();
     }
 
-    public void ResetTime()
-    {
-        totalGameMinutes = 8 * 60f;
-        aiTimer = 0f;
-        UpdateTimerUI();
-    }
-
     /// <summary>
     /// 🌟 只重置 AI 思考节奏，不影响游戏时间。用于紧急思考发生后重新起算下一次常规思考的倒计时，
     /// 避免紧急重新思考后不久又被常规定时器冗余触发一次。

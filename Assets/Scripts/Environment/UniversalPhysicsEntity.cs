@@ -20,13 +20,11 @@ public class UniversalPhysicsEntity : MonoBehaviour
     // 从配置中心动态拉取的只读物理规则
     private PhysicsProtocolConfig.PhysicsResistance physicsRule;
     private Vector3 lastVelocity;
-    private Vector3 startPosition;
 
     void Awake()
     {
         rb = GetComponent<Rigidbody>();
         semanticObj = GetComponent<SemanticObject>();
-        startPosition = transform.position;
     }
 
     void Start()
@@ -93,17 +91,5 @@ public class UniversalPhysicsEntity : MonoBehaviour
             // 默认行为：从物理宇宙和雷达中隐退
             gameObject.SetActive(false);
         }
-    }
-
-    /// <summary>
-    /// 提供给全局 SimulationManager 的重置接口
-    /// </summary>
-    public void ResetEntity()
-    {
-        transform.position = startPosition;
-        rb.linearVelocity = Vector3.zero;
-        rb.angularVelocity = Vector3.zero;
-        InitializePhysicsRule(); // 重新拉取配置，满血复活
-        gameObject.SetActive(true);
     }
 }
