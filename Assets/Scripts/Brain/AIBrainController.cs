@@ -4,13 +4,14 @@ using System.Collections;
 using System.Collections.Generic;
 using EmbodiedAI.DTO;
 
-// 🌟 【强力躯干护栏】：强制要求 NPC 身上必须同时带有这六个组件，缺一不可，Unity 会在挂载时自动补齐
+// 🌟 【强力躯干护栏】：强制要求 NPC 身上必须同时带有这七个组件，缺一不可，Unity 会在挂载时自动补齐
 [RequireComponent(typeof(CharacterActuator))]
 [RequireComponent(typeof(LocalMotorController))]
 [RequireComponent(typeof(NPCAttributes))]
 [RequireComponent(typeof(PerceptionRadar))]
 [RequireComponent(typeof(PromptManager))]
 [RequireComponent(typeof(GeminiHttpClient))]
+[RequireComponent(typeof(InstinctReflex))]
 public class AIBrainController : MonoBehaviour
 {
     [Header("🖥️ UI 元素 (只有 UI 需要手动拖拽)")]
@@ -30,13 +31,6 @@ public class AIBrainController : MonoBehaviour
     private bool pendingImmediateThink = false;
     private string currentGoal = "无";
     private SemanticType? currentInterruptAnchor = null;
-
-    private float lastDangerDensity = 0f;
-    [Header("🧠 小脑本能中断阈值")]
-    public float dangerThreshold = 2.5f;
-
-    // 🌟 复用缓冲区，避免每个物理帧的 OverlapSphere 产生 GC 分配
-    private readonly Collider[] dangerOverlapBuffer = new Collider[32];
 
     // AIBrainController.cs 追加对外接口
     public SemanticType? CurrentInterruptAnchor => currentInterruptAnchor;
@@ -76,74 +70,6 @@ public class AIBrainController : MonoBehaviour
 
         if (actuator != null)
             actuator.OnGrabSuccess -= HandleGrabSuccess;
-    }
-
-    void FixedUpdate()
-    {
-        // 每帧动态计算小脑雷达感知范围内的环境危险密度
-        float currentDangerDensity = CalculateEnvironmentalDangerDensity();
-
-        // 计算关于时间的导数（突变率）
-        float dDanger_dt = (currentDangerDensity - lastDangerDensity) / Time.fixedDeltaTime;
-        lastDangerDensity = currentDangerDensity;
-
-        // 【本能中断判定】：如果危险突变率超过阈值，说明发生了瞬时剧变
-        if (dDanger_dt > dangerThreshold)
-        {
-            Debug.LogError($"<color=red>🚨 [小脑物理本能爆发] 检测到环境危险熵突变率 {dDanger_dt:F2} 超过安全阈值 {dangerThreshold}！触发本能中断！</color>");
-
-            // 1. 瞬间踩死物理刹车，强行格式化双缓冲待办清单
-            InterruptAndClearGoal();
-
-            // 2. 零延迟强制大脑立刻联网对剧变进行思考
-            RequestImmediateThink();
-        }
-    }
-
-    private float CalculateEnvironmentalDangerDensity()
-    {
-        if (radar == null) return 0f;
-
-        int hitCount = Physics.OverlapSphereNonAlloc(transform.position, radar.perceptionRadius, dangerOverlapBuffer);
-        float totalDanger = 0f;
-
-        for (int i = 0; i < hitCount; i++)
-        {
-            var col = dangerOverlapBuffer[i];
-            if (col.gameObject == this.gameObject) continue;
-
-            SemanticObject semanticObj = col.GetComponent<SemanticObject>();
-            Rigidbody targetRb = col.GetComponent<Rigidbody>();
-
-            if (semanticObj != null)
-            {
-                float omega = 0f;
-                if (semanticObj.semanticType == SemanticType.Enemy) omega = 2.5f;     // 狼高危
-                else if (semanticObj.semanticType == SemanticType.Weapon) omega = 0.1f;
-
-                // 获取物体的绝对运动速度
-                Vector3 velocityVec = targetRb != null ? targetRb.linearVelocity : Vector3.zero;
-                float velocity = velocityVec.magnitude;
-
-                // 🌟【新增保护护栏】：如果物体有速度，判断它是在接近我还是远离我
-                if (velocity > 0.1f)
-                {
-                    Vector3 toMe = (transform.position - col.transform.position).normalized;
-                    // 计算物体运动方向与“朝向我”方向的点积
-                    float dot = Vector3.Dot(velocityVec.normalized, toMe);
-
-                    // 如果 dot <= 0，说明物体的运动方向正在背离我（被打飞或逃跑），威胁度归零！
-                    if (dot <= 0f) continue;
-                }
-
-                float distance = Vector3.Distance(transform.position, col.transform.position);
-                if (distance < 0.5f) distance = 0.5f;
-
-                totalDanger += (velocity * omega) / (distance * distance);
-            }
-        }
-
-        return totalDanger;
     }
 
     private void OnPhysicsBrainTick()

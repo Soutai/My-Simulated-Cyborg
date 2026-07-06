@@ -34,6 +34,10 @@ public class CharacterActuator : MonoBehaviour
     public GameObject RightHandObject => rightHandObject;
     public GameObject CurrentGrabbedObject => rightHandObject ?? leftHandObject;
 
+    // 🌟 NPC 当前正主动走向的目标（仅 APPROACH 执行期间非空）。
+    // 供本能反射系统甄别"是我自己主动冲过去的"和"是它自己冲过来的"，避免自己主动接近目标时被误判成遭到偷袭。
+    public GameObject CurrentApproachTarget { get; private set; }
+
     void Awake()
     {
         rb = GetComponent<Rigidbody>();
@@ -64,6 +68,7 @@ public class CharacterActuator : MonoBehaviour
         StopAllCoroutines();
         rb.linearVelocity = Vector3.zero;
         isExecuting = false;
+        CurrentApproachTarget = null; // 协程被强制打断，不会走到 ApproachTargetRoutine 自己的清理代码，这里补上
         // 确保被中断时也能通知小脑解锁
         OnSequenceFinished?.Invoke();
     }
@@ -137,6 +142,8 @@ public class CharacterActuator : MonoBehaviour
             Debug.LogWarning($"[APPROACH] 找不到目标: {targetId}");
             yield break;
         }
+
+        CurrentApproachTarget = target;
 
         // ==================== 【新配置系统】优先读取 ====================
         // 找不到 SemanticObject 时不再瞎猜类型，直接用中性的默认停止距离
@@ -250,6 +257,8 @@ public class CharacterActuator : MonoBehaviour
         {
             Debug.Log($"<color=green>[APPROACH] 正常结束 → {targetId}，总耗时 {timer:F1}s</color>");
         }
+
+        CurrentApproachTarget = null;
     }
 
     private IEnumerator MoveDirectionRoutine(float argX, float argZ, float strength = 1f)
@@ -338,16 +347,7 @@ public class CharacterActuator : MonoBehaviour
         {
             case PhysicsProtocolConfig.UseEffectKind.SweepAttack:
                 Debug.Log($"<color=yellow>[物理交互] 原始人挥舞了【{hand}手】的{target.name}！</color>");
-                Collider[] hits = Physics.OverlapSphere(transform.position + facingDirection * effect.forwardOffset, effect.effectRadius);
-                foreach (var h in hits)
-                {
-                    if (h.CompareTag(effect.affectedTag))
-                    {
-                        Rigidbody targetRb = h.GetComponent<Rigidbody>();
-                        if (targetRb)
-                            targetRb.AddForce((h.transform.position - transform.position).normalized * effect.knockbackForce, ForceMode.Impulse);
-                    }
-                }
+                PerformSweepAttack(effect, facingDirection);
                 break;
 
             case PhysicsProtocolConfig.UseEffectKind.Consume:
@@ -364,6 +364,56 @@ public class CharacterActuator : MonoBehaviour
             default:
                 break;
         }
+    }
+
+    /// <summary>
+    /// 横扫判定的共享实现：只认方向参数，不管这个方向是精确朝向（正常 USE_ITEM）
+    /// 还是带随机抖动的乱挥方向（本能反射的惊跳反应）。
+    /// </summary>
+    private void PerformSweepAttack(PhysicsProtocolConfig.ItemUseEffect effect, Vector3 direction)
+    {
+        Collider[] hits = Physics.OverlapSphere(transform.position + direction * effect.forwardOffset, effect.effectRadius);
+        foreach (var h in hits)
+        {
+            if (h.CompareTag(effect.affectedTag))
+            {
+                Rigidbody targetRb = h.GetComponent<Rigidbody>();
+                if (targetRb)
+                    targetRb.AddForce((h.transform.position - transform.position).normalized * effect.knockbackForce, ForceMode.Impulse);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 🌟 本能反射专用：不经过大脑指令、瞬间给身体一个冲量（逃跑/惊跳后退用）。
+    /// </summary>
+    public void ApplyInstinctImpulse(Vector3 impulse)
+    {
+        rb.AddForce(impulse, ForceMode.Impulse);
+    }
+
+    /// <summary>
+    /// 🌟 本能反射专用：猝不及防时手里有武器就本能地朝一个不精确的方向乱挥一下。
+    /// 只有手上物体的 USE_ITEM 效果本来就是 SweepAttack 时才会生效，不针对具体物体类型写死判断。
+    /// </summary>
+    public void InstinctFlailSwing(float angleJitterDegrees)
+    {
+        GameObject heldItem = CurrentGrabbedObject;
+        if (heldItem == null) return;
+
+        SemanticObject semantic = heldItem.GetComponent<SemanticObject>();
+        if (semantic == null) return;
+
+        var effect = PhysicsProtocolConfig.GetUseEffect(semantic.semanticType);
+        if (effect.kind != PhysicsProtocolConfig.UseEffectKind.SweepAttack) return;
+
+        float jitter = Random.Range(-angleJitterDegrees, angleJitterDegrees);
+        Vector3 flailDirection = Quaternion.Euler(0f, jitter, 0f) * facingDirection;
+
+        string handLabel = (heldItem == leftHandObject) ? "LEFT" : "RIGHT";
+        Debug.Log($"<color=#FF9900>[本能反射] 😱 手忙脚乱地挥舞了【{handLabel}手】的{heldItem.name}！</color>");
+
+        PerformSweepAttack(effect, flailDirection);
     }
 
     private void PerformRelease(string hand)
