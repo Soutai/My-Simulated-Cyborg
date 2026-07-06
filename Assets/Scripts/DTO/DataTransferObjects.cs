@@ -4,6 +4,9 @@ using UnityEngine;
 
 namespace EmbodiedAI.DTO
 {
+    // ⚠️ PlanStep / AIPhysicsDecision 的字段形状会被大模型按 JSON 原样解析（JsonUtility.FromJson）。
+    // 改这里的字段（增删/改名）时，务必同步更新 PromptManager.GeneratePhysicsEnginePrompt 里
+    // "## 5. 绝对限制 JSON 响应格式" 那段手写的 JSON 示例，否则大模型不会知道新字段的存在。
     [Serializable]
     public class PrimitiveCommand
     {
