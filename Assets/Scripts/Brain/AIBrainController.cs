@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
@@ -25,8 +26,10 @@ public class AIBrainController : MonoBehaviour
     private LocalMotorController smallBrain;
 
     private bool isThinking = false;
+    // 🌟 网络请求还在飞行中时又被要求"紧急重新思考"，先记下来，等这次请求收尾后立刻补一次，而不是静默丢弃
+    private bool pendingImmediateThink = false;
     private string currentGoal = "无";
-    private string currentInterruptAnchor = "None";
+    private SemanticType? currentInterruptAnchor = null;
 
     private float lastDangerDensity = 0f;
     [Header("🧠 小脑本能中断阈值")]
@@ -36,7 +39,7 @@ public class AIBrainController : MonoBehaviour
     private readonly Collider[] dangerOverlapBuffer = new Collider[32];
 
     // AIBrainController.cs 追加对外接口
-    public string CurrentInterruptAnchor => currentInterruptAnchor;
+    public SemanticType? CurrentInterruptAnchor => currentInterruptAnchor;
 
     void Awake()
     {
@@ -147,6 +150,10 @@ public class AIBrainController : MonoBehaviour
     {
         if (isThinking) return;
 
+        // 🌟 无论这次思考是常规定时器触发还是紧急打断触发，都在这里重新起算下一次常规节奏，
+        // 避免紧急重新思考后不久又被定时器冗余触发一次
+        TimeManager.Instance?.ResetAiTimer();
+
         string radarJson = radar.ScanEnvironmentToSemanticJson();
         float currentSatiety = attributes != null ? attributes.Satiety : 100f;
         NpcPersonality personality = attributes != null ? attributes.personality : NpcPersonality.NEUTRAL;
@@ -175,6 +182,7 @@ public class AIBrainController : MonoBehaviour
         if (decision == null)
         {
             isThinking = false;
+            ConsumePendingImmediateThink();
             return;
         }
 
@@ -182,8 +190,8 @@ public class AIBrainController : MonoBehaviour
 
         currentGoal = decision.goal;
 
-        // 🌟【需要补上这一行】：将大模型生成的动态锚点赋予本地变量，供小脑读取！
-        currentInterruptAnchor = !string.IsNullOrEmpty(decision.interrupt_anchor_type) ? decision.interrupt_anchor_type : "None";
+        // 🌟 将大模型给出的锚点字符串解析成 SemanticType，无法识别（含 "None"）就视为无锚点
+        currentInterruptAnchor = ParseInterruptAnchor(decision.interrupt_anchor_type);
 
         // 🌟 纯净流：送入小脑双缓冲
         if (smallBrain != null && decision.plan_steps != null && decision.plan_steps.Count > 0)
@@ -193,6 +201,27 @@ public class AIBrainController : MonoBehaviour
 
         isThinking = false;
         Debug.Log($"<color=lime>[大脑] 🎯 决策完成 → 当前目标: 【{currentGoal}】</color>");
+        ConsumePendingImmediateThink();
+    }
+
+    /// <summary>
+    /// 大模型的 interrupt_anchor_type 是自由文本（'Food'/'Enemy'/'Weapon'/'None'），
+    /// 在这个唯一边界上解析成强类型枚举，往后所有比较都不再依赖字符串。
+    /// </summary>
+    private SemanticType? ParseInterruptAnchor(string rawAnchor)
+    {
+        if (string.IsNullOrEmpty(rawAnchor)) return null;
+        return Enum.TryParse(rawAnchor.Trim(), true, out SemanticType parsed) ? parsed : (SemanticType?)null;
+    }
+
+    /// <summary>
+    /// 请求飞行期间被压下的紧急重新思考请求，在这次请求收尾时补上，而不是静默丢弃。
+    /// </summary>
+    private void ConsumePendingImmediateThink()
+    {
+        if (!pendingImmediateThink) return;
+        pendingImmediateThink = false;
+        RequestImmediateThink();
     }
 
     private void HandleGrabSuccess(GameObject grabbedObj, string hand)
@@ -204,6 +233,7 @@ public class AIBrainController : MonoBehaviour
     {
         Debug.Log($"[{GetCurrentTimestamp()}] [大脑] ❌ 请求失败");
         isThinking = false;
+        ConsumePendingImmediateThink();
     }
 
     private AIPhysicsDecision ParseBrainResponse(string rawText)
@@ -222,13 +252,16 @@ public class AIBrainController : MonoBehaviour
 
     public void RequestImmediateThink()
     {
-        if (!isThinking) OnPhysicsBrainTick();
+        if (!isThinking)
+            OnPhysicsBrainTick();
+        else
+            pendingImmediateThink = true; // 🌟 请求飞行中，先记下来，等收尾时补上，不要静默丢弃
     }
 
     public void InterruptAndClearGoal()
     {
         currentGoal = "无";
-        currentInterruptAnchor = "None"; // 🌟【需要补上这一行】：打断时同步复位锚点
+        currentInterruptAnchor = null; // 打断时同步复位锚点
 
         if (smallBrain != null)
         {
