@@ -19,7 +19,7 @@ public class TimeManager : MonoBehaviour
     private float totalGameMinutes = 8 * 60f;
     private float aiTimer = 0f;
 
-    public System.Action OnAITick;   // ← 新事件
+    public event System.Action OnAITick;
 
     void Awake()
     {
@@ -33,12 +33,12 @@ public class TimeManager : MonoBehaviour
         float minutesPerRealSecond = 60f / realSecondsPerHour;
         totalGameMinutes += Time.deltaTime * minutesPerRealSecond;
 
-        if (totalGameMinutes >= 1440f)
+        while (totalGameMinutes >= 1440f)
             totalGameMinutes -= 1440f;
 
         // AI 独立定时器（每20秒触发一次）
         aiTimer += Time.deltaTime;
-        if (aiTimer >= aiThinkInterval)
+        while (aiTimer >= aiThinkInterval)
         {
             aiTimer -= aiThinkInterval;
             OnAITick?.Invoke();
