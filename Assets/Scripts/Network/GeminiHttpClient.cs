@@ -3,7 +3,6 @@ using UnityEngine;
 using UnityEngine.Networking;
 using System.Collections;
 using System.Text;
-using System.IO;
 using EmbodiedAI.DTO;
 
 public class GeminiHttpClient : MonoBehaviour
@@ -33,7 +32,6 @@ public class GeminiHttpClient : MonoBehaviour
         }
     }
 
-    // 后续的 PostPrompt 和 PostPromptRoutine 代码保持不变...
     public void PostPrompt(string prompt, System.Action<string> onRawTextReceived, System.Action onError = null)
     {
         StartCoroutine(PostPromptRoutine(prompt, onRawTextReceived, onError));
@@ -48,7 +46,7 @@ public class GeminiHttpClient : MonoBehaviour
             $"========================================================================</color>"
         );
 
-        string url = apiKey == "" ? apiUrl : $"{apiUrl}?key={apiKey}";
+        string url = string.IsNullOrEmpty(apiKey) ? apiUrl : $"{apiUrl}?key={apiKey}";
 
         GeminiRequest requestBody = new GeminiRequest
         {
@@ -69,6 +67,8 @@ public class GeminiHttpClient : MonoBehaviour
             request.uploadHandler = new UploadHandlerRaw(bodyRaw);
             request.downloadHandler = new DownloadHandlerBuffer();
             request.SetRequestHeader("Content-Type", "application/json");
+            // 🌟 网络卡死时兜底：没有超时的话，请求可能永远挂起，导致 isThinking 永远卡在 true，NPC 彻底停止思考
+            request.timeout = 15;
 
             yield return request.SendWebRequest();
 
