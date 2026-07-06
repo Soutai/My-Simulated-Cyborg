@@ -68,7 +68,7 @@ public class CharacterActuator : MonoBehaviour
         OnSequenceFinished?.Invoke();
     }
 
-    public void ExecutePrimitiveSequence(List<PrimitiveCommand> commands, UnityEngine.UI.Text actionDisplay)
+    public void ExecutePrimitiveSequence(List<PlanStep> commands, UnityEngine.UI.Text actionDisplay)
     {
         if (commands == null || commands.Count == 0)
         {
@@ -80,15 +80,15 @@ public class CharacterActuator : MonoBehaviour
         StartCoroutine(SequenceRoutine(commands, actionDisplay));
     }
 
-    private IEnumerator SequenceRoutine(List<PrimitiveCommand> commands, UnityEngine.UI.Text actionDisplay)
+    private IEnumerator SequenceRoutine(List<PlanStep> commands, UnityEngine.UI.Text actionDisplay)
     {
         isExecuting = true;
         foreach (var cmd in commands)
         {
-            if (cmd == null || string.IsNullOrEmpty(cmd.op)) continue;
+            if (cmd == null || string.IsNullOrEmpty(cmd.arrival_op)) continue;
             if (!isExecuting) yield break;
 
-            string opType = cmd.op.ToUpper().Trim();
+            string opType = cmd.arrival_op.ToUpper().Trim();
             string TargetHand = (!string.IsNullOrEmpty(cmd.hand) && cmd.hand.ToUpper().Trim() == "LEFT") ? "LEFT" : "RIGHT";
 
             Debug.Log($"<color=yellow>[物理流水线] ⚙️ 开始串行执行原子动作: {opType}</color>");

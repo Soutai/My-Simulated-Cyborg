@@ -73,7 +73,6 @@ public class PromptManager : MonoBehaviour
             "格式如下：\n" +
             "{\n" +
             "  \"monologue\": \"思考过程（中文）...\",\n" +
-            "  \"primitive_commands\": [],\n" +
             "  \"goal\": \"短期目标描述\",\n" +
             "  \"interrupt_anchor_type\": \"Food\",\n" + 
             "  \"plan_steps\": [\n" +

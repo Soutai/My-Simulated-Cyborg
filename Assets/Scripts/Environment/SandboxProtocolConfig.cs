@@ -20,9 +20,6 @@ public class PhysicalInteractionConfig
 
     [Tooltip("GRAB 允许的最大抓取距离")]
     public float maxGraspDistance = 1.25f;
-
-    [Tooltip("给AI的描述（可选）")]
-    public string descriptionForAI = "";
 }
 
 public static class SandboxProtocolConfig
@@ -34,22 +31,19 @@ public static class SandboxProtocolConfig
         {
             type = SemanticType.Food,
             desiredApproachDistance = 0.85f,
-            maxGraspDistance = 1.25f,
-            descriptionForAI = "这是一个小型食物，建议靠近到0.85米以内再抓取。"
+            maxGraspDistance = 1.25f
         },
         new PhysicalInteractionConfig
         {
             type = SemanticType.Weapon,
             desiredApproachDistance = 0.60f,
-            maxGraspDistance = 1.1f,
-            descriptionForAI = "这是一根长条武器，建议靠近到0.6米以内抓取。"
+            maxGraspDistance = 1.1f
         },
         new PhysicalInteractionConfig
         {
             type = SemanticType.Enemy,
             desiredApproachDistance = 1.8f,
-            maxGraspDistance = 2.5f,
-            descriptionForAI = "敌人危险，建议保持1.8米以上距离进行攻击。"
+            maxGraspDistance = 2.5f
         }
     };
 

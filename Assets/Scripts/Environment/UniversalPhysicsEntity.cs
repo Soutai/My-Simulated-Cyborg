@@ -19,7 +19,6 @@ public class UniversalPhysicsEntity : MonoBehaviour
 
     // 从配置中心动态拉取的只读物理规则
     private PhysicsProtocolConfig.PhysicsResistance physicsRule;
-    private Vector3 lastVelocity;
 
     void Awake()
     {
@@ -55,8 +54,6 @@ public class UniversalPhysicsEntity : MonoBehaviour
         {
             EvaluatePhysicsImpact(instantaneousSpeed * physicsRule.damageMultiplier);
         }
-
-        lastVelocity = rb.linearVelocity;
     }
 
     void OnCollisionEnter(Collision collision)
@@ -67,7 +64,7 @@ public class UniversalPhysicsEntity : MonoBehaviour
         float relativeImpactSpeed = collision.relativeVelocity.magnitude;
         if (relativeImpactSpeed > physicsRule.impactThreshold)
         {
-            EvaluatePhysicsImpact(relativeImpactSpeed * physicsRule.damageMultiplier * 1.5f);
+            EvaluatePhysicsImpact(relativeImpactSpeed * physicsRule.damageMultiplier * physicsRule.collisionDamageMultiplier);
         }
     }
 

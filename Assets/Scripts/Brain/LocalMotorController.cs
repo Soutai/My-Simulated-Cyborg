@@ -14,8 +14,8 @@ public class LocalMotorController : MonoBehaviour
     private bool isBusy = false;
 
     // 🌟 核心双缓冲队列
-    private List<PrimitiveCommand> frontBuffer = new List<PrimitiveCommand>();
-    private List<PrimitiveCommand> backBuffer = new List<PrimitiveCommand>();
+    private List<PlanStep> frontBuffer = new List<PlanStep>();
+    private List<PlanStep> backBuffer = new List<PlanStep>();
 
     // 🌟 复用缓冲区，避免每帧 OverlapSphere 产生 GC 分配
     private readonly Collider[] anchorOverlapBuffer = new Collider[32];
@@ -98,20 +98,9 @@ public class LocalMotorController : MonoBehaviour
     {
         if (planSteps == null || planSteps.Count == 0) return;
 
-        // 解析为底层物理原语
-        List<PrimitiveCommand> incomingCommands = new List<PrimitiveCommand>();
-        foreach (var step in planSteps)
-        {
-            incomingCommands.Add(new PrimitiveCommand
-            {
-                op = step.arrival_op ?? "APPLY_FORCE",
-                hand = step.hand,
-                target_id = step.target_id,
-                arg_x = step.arg_x,
-                arg_z = step.arg_z,
-                strength = step.strength
-            });
-        }
+        // 🌟 PlanStep 本身就是执行器认识的命令结构，不再需要额外转换成 PrimitiveCommand；
+        // 这里拷贝一份新列表，只是为了让缓冲区跟大模型原始返回的列表解耦
+        List<PlanStep> incomingCommands = new List<PlanStep>(planSteps);
 
         // 🌟 纯净双缓冲分流
         if (!isBusy)
@@ -151,7 +140,7 @@ public class LocalMotorController : MonoBehaviour
         if (backBuffer.Count > 0)
         {
             Debug.Log($"<color=lime>[小脑] ⚡ 零延迟无缝切换！将后台缓冲区(Back Buffer)激活推进！</color>");
-            frontBuffer = new List<PrimitiveCommand>(backBuffer);
+            frontBuffer = new List<PlanStep>(backBuffer);
             backBuffer.Clear();
 
             ExecuteFrontBuffer();

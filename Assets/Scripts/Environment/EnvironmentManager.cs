@@ -1,6 +1,5 @@
 using UnityEngine;
 using System.Collections;
-using System.Collections.Generic;
 
 public class EnvironmentManager : MonoBehaviour
 {
@@ -21,8 +20,8 @@ public class EnvironmentManager : MonoBehaviour
     [Tooltip("水果贴近地面的 Y 轴高度")]
     public float groundY = 0.25f;
 
-    // 用来记录动态生成出来的所有水果，方便一键重置销毁
-    private List<GameObject> spawnedFoods = new List<GameObject>();
+    // 用来给动态生成的水果编号命名
+    private int spawnedFoodCount = 0;
     private Coroutine spawnCoroutine;
 
     void Awake()
@@ -73,21 +72,9 @@ public class EnvironmentManager : MonoBehaviour
 
         // 3. 🌟硬性保障：确保生成出的新水果具有 "Food" 的 Tag，这样 NPC 的雷达和身体才能完美识别！
         newFood.tag = "Food";
-        newFood.name = $"Fruit_Spawned_{spawnedFoods.Count + 1}";
+        spawnedFoodCount++;
+        newFood.name = $"Fruit_Spawned_{spawnedFoodCount}";
 
-        spawnedFoods.Add(newFood);
         Debug.Log($"<color=#33CCFF>[世界系统] 🌳 土地孕育了新的果实！生成于：{spawnPos}</color>");
-    }
-
-    /// <summary>
-    /// 🌟 给重置系统调用的清场后门：一键拔除所有临时生成的水果
-    /// </summary>
-    public void ClearAllSpawnedFoods()
-    {
-        foreach (GameObject food in spawnedFoods)
-        {
-            if (food != null) Destroy(food);
-        }
-        spawnedFoods.Clear();
     }
 }

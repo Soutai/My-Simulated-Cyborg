@@ -78,6 +78,17 @@ public class GeminiHttpClient : MonoBehaviour
                 try
                 {
                     var res = JsonUtility.FromJson<GeminiResponse>(rawJson);
+
+                    if (res.candidates == null || res.candidates.Length == 0)
+                    {
+                        string blockReason = res.promptFeedback != null && !string.IsNullOrEmpty(res.promptFeedback.blockReason)
+                            ? res.promptFeedback.blockReason
+                            : "未知原因";
+                        Debug.LogError($"[Client] ❌ Gemini 未返回候选结果（可能被安全策略拦截，拦截原因: {blockReason}）");
+                        onError?.Invoke();
+                        yield break;
+                    }
+
                     string aiTextContent = res.candidates[0].content.parts[0].text;
 
                     // 🌟【追加的 LOG 2】：显式高亮打印 AI 回复的原始决策内容

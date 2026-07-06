@@ -9,9 +9,10 @@ public static class PhysicsProtocolConfig
     // 定义每个语义物体的底层物理抗性数据结构
     public struct PhysicsResistance
     {
-        public float maxTolerance;          // 物理耐受度 (生命值/耐久度)
-        public float impactThreshold;       // 瞬时速度或碰撞突变受伤阈值
-        public float damageMultiplier;      // 物理冲击放大系数
+        public float maxTolerance;              // 物理耐受度 (生命值/耐久度)
+        public float impactThreshold;           // 瞬时速度或碰撞突变受伤阈值
+        public float damageMultiplier;          // 物理冲击放大系数
+        public float collisionDamageMultiplier; // 硬碰撞相对于单纯超速的额外伤害放大系数
     }
 
     // USE_ITEM 触发的效果种类
@@ -43,15 +44,15 @@ public static class PhysicsProtocolConfig
         {
             {
                 SemanticType.Enemy, // 狼：躯体较脆弱，容易被木棍高速击退轰飞触发消亡
-                new PhysicsResistance { maxTolerance = 60f, impactThreshold = 12f, damageMultiplier = 2.5f }
+                new PhysicsResistance { maxTolerance = 60f, impactThreshold = 12f, damageMultiplier = 2.5f, collisionDamageMultiplier = 1.5f }
             },
             {
                 SemanticType.Food,  // 水果：极为脆弱，如果发生剧烈碰撞或被踩踏可能会坏掉
-                new PhysicsResistance { maxTolerance = 10f, impactThreshold = 5f, damageMultiplier = 1.0f }
+                new PhysicsResistance { maxTolerance = 10f, impactThreshold = 5f, damageMultiplier = 1.0f, collisionDamageMultiplier = 1.5f }
             },
             {
                 SemanticType.Weapon, // 木棍：作为坚硬的武器，基本不会因为物理碰撞而损坏
-                new PhysicsResistance { maxTolerance = 9999f, impactThreshold = 100f, damageMultiplier = 0f }
+                new PhysicsResistance { maxTolerance = 9999f, impactThreshold = 100f, damageMultiplier = 0f, collisionDamageMultiplier = 1.5f }
             }
         };
 
@@ -90,7 +91,7 @@ public static class PhysicsProtocolConfig
             return resistance;
         }
         // 默认保底配置，防止未注册类型报错
-        return new PhysicsResistance { maxTolerance = 100f, impactThreshold = 10f, damageMultiplier = 2.0f };
+        return new PhysicsResistance { maxTolerance = 100f, impactThreshold = 10f, damageMultiplier = 2.0f, collisionDamageMultiplier = 1.5f };
     }
 
     /// <summary>
