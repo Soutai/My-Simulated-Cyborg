@@ -18,6 +18,9 @@ public class HearingReflex : MonoBehaviour
     private PerceptionRadar radar;
 
     [Header("听觉转向")]
+    [Tooltip("听觉自己独立的感知半径，不跟视觉/危险感知共用——声音会随距离衰减，" +
+        "通常比看得清脸的视觉距离更远，但比不上危险感知那么大")]
+    public float hearingRadius = 12f;
     [Tooltip("移动速度超过此值的物体才会被视为发出了声音，静止的东西不发声")]
     public float noiseVelocityThreshold = 0.5f;
 
@@ -53,7 +56,7 @@ public class HearingReflex : MonoBehaviour
         GameObject loudestSource = null;
         float loudestScore = 0f;
 
-        int hitCount = Physics.OverlapSphereNonAlloc(transform.position, radar.perceptionRadius, hearingBuffer);
+        int hitCount = Physics.OverlapSphereNonAlloc(transform.position, hearingRadius, hearingBuffer);
         for (int i = 0; i < hitCount; i++)
         {
             var col = hearingBuffer[i];
@@ -85,5 +88,14 @@ public class HearingReflex : MonoBehaviour
         Vector3 dir = loudestSource.transform.position - transform.position;
         dir.y = 0f;
         return dir.sqrMagnitude > 0.0001f ? dir.normalized : (Vector3?)null;
+    }
+
+    private void OnDrawGizmos()
+    {
+#if UNITY_EDITOR
+        // 听觉范围：淡蓝紫色圈，跟 PerceptionRadar 的视觉扇形/黄色听觉圈区分开
+        UnityEditor.Handles.color = new Color(0.6f, 0.6f, 1f, 0.3f);
+        UnityEditor.Handles.DrawWireDisc(transform.position, Vector3.up, hearingRadius);
+#endif
     }
 }

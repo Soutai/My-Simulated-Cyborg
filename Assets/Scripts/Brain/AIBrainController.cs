@@ -4,7 +4,7 @@ using System.Collections;
 using System.Collections.Generic;
 using EmbodiedAI.DTO;
 
-// 🌟 【强力躯干护栏】：强制要求 NPC 身上必须同时带有这八个组件，缺一不可，Unity 会在挂载时自动补齐
+// 🌟 【强力躯干护栏】：强制要求 NPC 身上必须同时带有这十个组件，缺一不可，Unity 会在挂载时自动补齐
 [RequireComponent(typeof(CharacterActuator))]
 [RequireComponent(typeof(LocalMotorController))]
 [RequireComponent(typeof(NPCAttributes))]
@@ -13,6 +13,8 @@ using EmbodiedAI.DTO;
 [RequireComponent(typeof(GeminiHttpClient))]
 [RequireComponent(typeof(InstinctReflex))]
 [RequireComponent(typeof(HearingReflex))]
+[RequireComponent(typeof(SpatialMemoryStore))]
+[RequireComponent(typeof(WanderReflex))]
 public class AIBrainController : MonoBehaviour
 {
     [Header("🖥️ UI 元素 (只有 UI 需要手动拖拽)")]
@@ -26,6 +28,7 @@ public class AIBrainController : MonoBehaviour
     private GeminiHttpClient httpClient;
     private CharacterActuator actuator;
     private LocalMotorController smallBrain;
+    private SpatialMemoryStore memoryStore;
 
     private bool isThinking = false;
     // 🌟 网络请求还在飞行中时又被要求"紧急重新思考"，先记下来，等这次请求收尾后立刻补一次，而不是静默丢弃
@@ -45,6 +48,7 @@ public class AIBrainController : MonoBehaviour
         httpClient = GetComponent<GeminiHttpClient>();
         actuator = GetComponent<CharacterActuator>();
         smallBrain = GetComponent<LocalMotorController>();
+        memoryStore = GetComponent<SpatialMemoryStore>();
 
         if (actuator != null)
             actuator.OnGrabSuccess += HandleGrabSuccess;
@@ -83,6 +87,7 @@ public class AIBrainController : MonoBehaviour
         TimeManager.Instance?.ResetAiTimer();
 
         string radarJson = radar.ScanEnvironmentToSemanticJson();
+        string memoryJson = memoryStore != null ? memoryStore.GenerateMemoryJson() : "[]";
         float currentSatiety = attributes != null ? attributes.Satiety : 100f;
         NpcPersonality personality = attributes != null ? attributes.personality : NpcPersonality.NEUTRAL;
         string timeStr = TimeManager.Instance != null ? TimeManager.Instance.GetCurrentTimeString() : "00:00";
@@ -92,6 +97,7 @@ public class AIBrainController : MonoBehaviour
             personality,
             timeStr,
             radarJson,
+            memoryJson,
             actuator.LeftHandObject ? actuator.LeftHandObject.name : "",
             actuator.RightHandObject ? actuator.RightHandObject.name : "",
             currentGoal

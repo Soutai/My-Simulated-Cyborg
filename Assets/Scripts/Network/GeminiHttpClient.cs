@@ -108,7 +108,10 @@ public class GeminiHttpClient : MonoBehaviour
             }
             else
             {
-                Debug.LogError($"[Client] API 请求失败: {request.error}");
+                // 🌟 请求超时/网络失败是已经被优雅兜底处理的预期情况（15s 超时 + onError 回调走正常降级流程），
+                // 不用 LogError——否则如果 Unity Console 的"Error Pause"意外被打开，
+                // 每次网络抖动都会把整个 Play Mode 直接冻结，表现得像莫名其妙的死机。
+                Debug.LogWarning($"[Client] API 请求失败: {request.error}");
                 onError?.Invoke();
             }
         }

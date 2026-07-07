@@ -103,4 +103,16 @@ public static class PhysicsProtocolConfig
             ? effect
             : new ItemUseEffect { kind = UseEffectKind.None };
     }
+
+    // 🌟 赤手空拳的反击效果：本能反射专用，不需要持有任何物品。跟木棍横扫用的是同一套
+    // SweepAttack 机制（纯物理击退，不直接扣血），只是力度明显弱于武器——
+    // 徒手推一把总比拿棍子抡一下弱，这样"有没有武器"依然有意义。
+    public static readonly ItemUseEffect UnarmedPunchEffect = new ItemUseEffect
+    {
+        kind = UseEffectKind.SweepAttack,
+        effectRadius = 1.5f,
+        forwardOffset = 0.6f,
+        knockbackForce = 12f,
+        affectedTag = "Enemy"
+    };
 }

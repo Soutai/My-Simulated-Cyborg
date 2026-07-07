@@ -46,6 +46,9 @@ public class CharacterActuator : MonoBehaviour
     // 不会跟"移动方向决定朝向"这条规则打架。
     public bool IsNearlyStationary => new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z).magnitude < minSpeedToUpdateFacing;
 
+    // 🌟 只读地暴露当前真实速度，供本地反射系统（诊断日志等）读取，不用各自额外持有 Rigidbody 引用
+    public Vector3 CurrentVelocity => rb.linearVelocity;
+
     void Awake()
     {
         rb = GetComponent<Rigidbody>();
@@ -404,8 +407,8 @@ public class CharacterActuator : MonoBehaviour
     }
 
     /// <summary>
-    /// 🌟 本能反射专用：不经过大脑指令、持续朝某个方向施力（逃跑用）。
-    /// 只有 InstinctReflex 判断身体空闲时才会调用，不会跟正常的指令序列打架。
+    /// 🌟 本地反射专用：不经过大脑指令、持续朝某个方向施力。通用的"给个方向和力度，
+    /// 身体就一直往那边走"接口，逃跑用的 InstinctReflex 和漫步探索用的 WanderReflex 共用这一个方法。
     /// </summary>
     public void ApplyInstinctForce(Vector3 direction, float force, float maxSpeed)
     {
@@ -418,6 +421,25 @@ public class CharacterActuator : MonoBehaviour
             Vector3 limited = horizontalVel.normalized * maxSpeed;
             rb.linearVelocity = new Vector3(limited.x, vel.y, limited.z);
         }
+    }
+
+    /// <summary>
+    /// 🌟 本能反射专用：卡死急救冲量。持续的平稳推力（ApplyInstinctForce）在身体被障碍物
+    /// 挤压卡死时会被摩擦力/挤压反力完全吃掉，纹丝不动——这时候需要一次远超日常强度的瞬间冲量，
+    /// 才有机会把身体从卡死的缝隙里"弹"出去，而不是继续无效地慢慢推。
+    /// </summary>
+    public void ApplyInstinctUnstickImpulse(Vector3 direction, float impulse)
+    {
+        rb.AddForce(direction * impulse, ForceMode.Impulse);
+    }
+
+    /// <summary>
+    /// 🌟 本能反射专用：赤手空拳反击。被逼到贴身且逃不掉时的最后手段，
+    /// 复用武器横扫同一套物理击退机制，只是力度明显弱于武器（见 PhysicsProtocolConfig.UnarmedPunchEffect）。
+    /// </summary>
+    public void ApplyInstinctPunch(Vector3 direction)
+    {
+        PerformSweepAttack(PhysicsProtocolConfig.UnarmedPunchEffect, direction);
     }
 
     private void PerformRelease(string hand)

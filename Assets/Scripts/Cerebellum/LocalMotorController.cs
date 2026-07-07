@@ -5,15 +5,18 @@ using EmbodiedAI.DTO;
 
 [RequireComponent(typeof(CharacterActuator))]
 [RequireComponent(typeof(AIBrainController))]
+[RequireComponent(typeof(WanderReflex))]
 public class LocalMotorController : MonoBehaviour
 {
     private CharacterActuator actuator;
     private AIBrainController brain;
     private PerceptionRadar radar;
+    private InstinctReflex instinctReflex;
+    private WanderReflex wanderReflex;
 
     private bool isBusy = false;
 
-    // 🌟 供 InstinctReflex 判断"身体现在有没有在执行大脑下发的计划"，只有空闲时反射才接管移动
+    // 🌟 供 InstinctReflex 判断"身体现在有没有在执行大脑下发的计划"
     public bool IsBusy => isBusy;
 
     // 🌟 核心双缓冲队列
@@ -32,6 +35,8 @@ public class LocalMotorController : MonoBehaviour
         actuator = GetComponent<CharacterActuator>();
         brain = GetComponent<AIBrainController>();
         radar = GetComponent<PerceptionRadar>();
+        instinctReflex = GetComponent<InstinctReflex>();
+        wanderReflex = GetComponent<WanderReflex>();
 
         if (actuator != null)
         {
@@ -59,7 +64,7 @@ public class LocalMotorController : MonoBehaviour
             if (CheckRadarForAnchor(anchor))
             {
                 Debug.Log($"<color=#00FFFF>[小脑感官唤醒] 👁️ 警报！雷达扫描到与长任务终极锚点一致的类型【{anchor}】！</color>");
-                Debug.Log("<color=#00FFFF>[小脑感官唤醒] 🛑 掐断剩余全部无意义走格子步骤，强制交还大脑决策。</color>");
+                Debug.Log("<color=#00FFFF>[小脑感官唤醒] 🛑 掐断当前漫无目的的探索/长程任务，强制交还大脑决策。</color>");
 
                 // brain.InterruptAndClearGoal() 内部会调用 smallBrain.InterruptAndClear()，这里不需要重复调用
                 brain.InterruptAndClearGoal();
@@ -105,8 +110,12 @@ public class LocalMotorController : MonoBehaviour
         // 这里拷贝一份新列表，只是为了让缓冲区跟大模型原始返回的列表解耦
         List<PlanStep> incomingCommands = new List<PlanStep>(planSteps);
 
+        // 🌟 本能反射接管期间，身体不算"空闲"——哪怕 isBusy 恰好是 false（比如反射刚抢完控制权），
+        // 新计划也只能乖乖排到后台缓冲区，等本能解除后才被接续执行，不能反过来打断本能。
+        bool occupiedByInstinct = instinctReflex != null && instinctReflex.IsFleeing;
+
         // 🌟 纯净双缓冲分流
-        if (!isBusy)
+        if (!isBusy && !occupiedByInstinct)
         {
             Debug.Log($"<color=cyan>[小脑] 🟢 身体空闲，拉起前台缓冲区直接执行。目标: {brainGoal}</color>");
             frontBuffer = incomingCommands;
@@ -114,7 +123,8 @@ public class LocalMotorController : MonoBehaviour
         }
         else
         {
-            Debug.Log($"<color=orange>[小脑] 💾 身体正忙，新指令无缝锁入后台缓冲区(Back Buffer)。目标: {brainGoal}</color>");
+            string reason = occupiedByInstinct ? "身体正被本能反射占用" : "身体正忙";
+            Debug.Log($"<color=orange>[小脑] 💾 {reason}，新指令无缝锁入后台缓冲区(Back Buffer)。目标: {brainGoal}</color>");
             backBuffer = incomingCommands;
         }
     }
@@ -124,7 +134,21 @@ public class LocalMotorController : MonoBehaviour
         if (frontBuffer.Count == 0) return;
 
         isBusy = true;
+
+        // 🌟 EXPLORE 是开放式的本地漫步，不是一个"做完就结束"的定长原语，不走 CharacterActuator
+        // 的原语序列——交给 WanderReflex 持续接管，直到锚点唤醒或本能反射把控制权抢回去为止。
+        if (frontBuffer.Count == 1 && IsExploreStep(frontBuffer[0]))
+        {
+            wanderReflex.BeginWandering();
+            return;
+        }
+
         actuator.ExecutePrimitiveSequence(frontBuffer, null);
+    }
+
+    private static bool IsExploreStep(PlanStep step)
+    {
+        return step != null && string.Equals(step.arrival_op?.Trim(), "EXPLORE", System.StringComparison.OrdinalIgnoreCase);
     }
 
     private void OnCurrentSequenceFinished()
@@ -155,6 +179,25 @@ public class LocalMotorController : MonoBehaviour
     }
 
     /// <summary>
+    /// 🌟 本能反射解除接管后调用：如果大脑在反射占用身体期间攒了新计划（锁在后台缓冲区），
+    /// 立刻无缝接续执行；没有的话什么也不做，交由调用方（InstinctReflex）决定要不要叫醒大脑。
+    /// 返回值告诉调用方"有没有真的接续上一个计划"，没有的话身体现在是彻底空闲的。
+    /// </summary>
+    public bool TryResumeFromBackBuffer()
+    {
+        if (isBusy) return true; // 正常不该发生，双保险——既然已经忙起来了，就当作"已经有人接管"处理
+        if (backBuffer.Count > 0)
+        {
+            Debug.Log("<color=lime>[小脑] ⚡ 本能反射已解除，接续执行期间攒下的后台缓冲区(Back Buffer)！</color>");
+            frontBuffer = new List<PlanStep>(backBuffer);
+            backBuffer.Clear();
+            ExecuteFrontBuffer();
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>
     /// 💥 本能中断急停接口
     /// </summary>
     public void InterruptAndClear()
@@ -164,5 +207,6 @@ public class LocalMotorController : MonoBehaviour
         backBuffer.Clear();
         isBusy = false;
         suppressNextFinishLog = true; // 紧接着触发的 actuator.StopAllPhysicalMovement 会连带产生一次多余回调
+        wanderReflex?.StopWandering(); // EXPLORE 不经过 actuator 的原语序列，StopAllPhysicalMovement 管不到它，这里单独喊停
     }
 }

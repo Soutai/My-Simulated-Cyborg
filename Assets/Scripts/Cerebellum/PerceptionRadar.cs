@@ -1,9 +1,13 @@
 using UnityEngine;
 using System.Text;
+using System.Collections.Generic;
 
 public class PerceptionRadar : MonoBehaviour
 {
-    public float perceptionRadius = 15f; // 放大感知距离，给物理拉扯留出足够的空间
+    // 🌟 视觉的最大有效距离（发给大脑的感知 JSON、'战略惊醒锚点'扫描都用这个）。
+    // 听觉（HearingReflex.hearingRadius）和本能危险感知（InstinctReflex.dangerSenseRadius）
+    // 各自有独立半径，不再跟这个共用——三套感官理应各自可调。
+    public float perceptionRadius = 15f;
 
     [Header("视觉扇形")]
     [Tooltip("视野半角（单侧），人类双眼视野总角度大约110°-120°，默认给单侧55°")]
@@ -20,13 +24,16 @@ public class PerceptionRadar : MonoBehaviour
         actuator = GetComponent<CharacterActuator>();
     }
 
-    public string ScanEnvironmentToSemanticJson()
+    /// <summary>
+    /// 扫描出此刻视野内（感知半径 + 视觉扇形角度都满足）的语义物体列表。
+    /// 抽出来独立成公开方法，是因为不止 Prompt 需要这份"当前看到了什么"——
+    /// 屏幕上的感知调试面板（PerceptionHudDisplay）也需要同一份数据，不应该各自重新扫一遍。
+    /// </summary>
+    public List<SemanticObject> GetVisibleObjects()
     {
+        var visible = new List<SemanticObject>();
         int hitCount = Physics.OverlapSphereNonAlloc(transform.position, perceptionRadius, scanBuffer);
-        StringBuilder sb = new StringBuilder();
-        sb.Append("[\n");
 
-        bool isFirst = true;
         for (int i = 0; i < hitCount; i++)
         {
             var col = scanBuffer[i];
@@ -36,38 +43,48 @@ public class PerceptionRadar : MonoBehaviour
             if (actuator != null && (col.gameObject == actuator.LeftHandObject || col.gameObject == actuator.RightHandObject))
                 continue;
 
-            // 🌟 视觉扇形：只有落在正面视野角度内的物体才算"看见"（这里还不是最终形态——
-            // 视野外、感知半径内的东西以后会作为"听觉"只给方向不给身份，目前先简单跳过不识别）
+            // 🌟 视觉扇形：只有落在正面视野角度内的物体才算"看见"
             if (actuator != null && !IsWithinVisionCone(col.transform.position))
                 continue;
 
-            // 获取挂载在物体身上的语义化组件
             SemanticObject semanticObj = col.GetComponent<SemanticObject>();
-            if (semanticObj != null)
-            {
-                if (!isFirst) sb.Append(",\n");
-                isFirst = false;
+            if (semanticObj != null) visible.Add(semanticObj);
+        }
 
-                // 计算三维空间相对坐标偏移 (以原始人为坐标原点 0,0,0)
-                Vector3 relativePos = col.transform.position - transform.position;
+        return visible;
+    }
 
-                // 枚举名字本身就是 Food/Weapon/Enemy，直接转字符串，不需要手动映射
-                string typeString = semanticObj.semanticType.ToString();
+    public string ScanEnvironmentToSemanticJson()
+    {
+        List<SemanticObject> visible = GetVisibleObjects();
+        StringBuilder sb = new StringBuilder();
+        sb.Append("[\n");
 
-                // 动态获取绝对配置中心对该物体的机制语义化解释
-                string dynamicMechanismRules = semanticObj.MechanismDescription;
+        for (int i = 0; i < visible.Count; i++)
+        {
+            SemanticObject semanticObj = visible[i];
 
-                sb.Append("  {\n");
-                sb.Append($"    \"object_id\": \"{col.gameObject.name}\",\n");
-                sb.Append($"    \"type\": \"{typeString}\",\n");
-                sb.Append("    \"relative_position_offset\": {\n");
-                sb.Append($"      \"relative_x\": {relativePos.x:F2},\n");
-                sb.Append($"      \"relative_z\": {relativePos.z:F2}\n");
-                sb.Append("    },\n");
-                sb.Append($"    \"distance\": {relativePos.magnitude:F2},\n");
-                sb.Append($"    \"mechanism_rules\": \"{dynamicMechanismRules}\"\n"); // 注入机制语义描述
-                sb.Append("  }");
-            }
+            if (i > 0) sb.Append(",\n");
+
+            // 计算三维空间相对坐标偏移 (以原始人为坐标原点 0,0,0)
+            Vector3 relativePos = semanticObj.transform.position - transform.position;
+
+            // 枚举名字本身就是 Food/Weapon/Enemy，直接转字符串，不需要手动映射
+            string typeString = semanticObj.semanticType.ToString();
+
+            // 动态获取绝对配置中心对该物体的机制语义化解释
+            string dynamicMechanismRules = semanticObj.MechanismDescription;
+
+            sb.Append("  {\n");
+            sb.Append($"    \"object_id\": \"{semanticObj.gameObject.name}\",\n");
+            sb.Append($"    \"type\": \"{typeString}\",\n");
+            sb.Append("    \"relative_position_offset\": {\n");
+            sb.Append($"      \"relative_x\": {relativePos.x:F2},\n");
+            sb.Append($"      \"relative_z\": {relativePos.z:F2}\n");
+            sb.Append("    },\n");
+            sb.Append($"    \"distance\": {relativePos.magnitude:F2},\n");
+            sb.Append($"    \"mechanism_rules\": \"{dynamicMechanismRules}\"\n"); // 注入机制语义描述
+            sb.Append("  }");
         }
         sb.Append("\n]");
         return sb.ToString();
@@ -92,14 +109,21 @@ public class PerceptionRadar : MonoBehaviour
         return angle <= visionHalfAngle;
     }
 
+    /// <summary>
+    /// 判断某个世界坐标是否"此刻真的能看见"——距离在 perceptionRadius 内，且在视觉扇形角度内。
+    /// 供记忆系统（SpatialMemoryStore）判断"这条记忆现在还看得见吗，要不要跳过不重复汇报"。
+    /// </summary>
+    public bool IsCurrentlyVisible(Vector3 worldPosition)
+    {
+        float distance = Vector3.Distance(transform.position, worldPosition);
+        return distance <= perceptionRadius && IsWithinVisionCone(worldPosition);
+    }
+
     private void OnDrawGizmos()
     {
 #if UNITY_EDITOR
-        // 1. 听觉圆圈：仅绘制水平面 (X-Z) 的感知范围
-        UnityEditor.Handles.color = new Color(1f, 0.92f, 0.016f, 0.35f);
-        UnityEditor.Handles.DrawWireDisc(transform.position, Vector3.up, perceptionRadius);
-
-        // 2. 视觉扇形：用当前朝向（没有朝向时退化为 transform.forward）画一个能直观看到的扇形
+        // 视觉扇形：用当前朝向（没有朝向时退化为 transform.forward）画一个能直观看到的扇形。
+        // perceptionRadius 本身就是这个扇形的半径，不用再额外画一个独立的参考圆圈。
         Vector3 facing = Application.isPlaying && actuator != null ? actuator.FacingDirection : transform.forward;
         facing.y = 0f;
         if (facing.sqrMagnitude < 0.0001f) facing = transform.forward;

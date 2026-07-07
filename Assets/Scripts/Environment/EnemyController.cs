@@ -12,8 +12,12 @@ using UnityEngine;
 public class EnemyController : MonoBehaviour
 {
     [Header("感知与追击")]
-    public float perceptionRadius = 15f;
-    public float chaseForce = 15f;
+    [Tooltip("场景是 50x50 的方形区域；这个值必须明显小于 NPC 本能反射的 alertRange，" +
+        "确保 NPC 至少和狼同时甚至更早察觉到追击，不会被打个措手不及")]
+    public float perceptionRadius = 14f;
+    [Tooltip("必须明显低于 NPC 的 fleeForce，否则 NPC 每次被逼到墙角/障碍物重新起步时都会被加速度更快的狼追上，永远逃不掉")]
+    public float chaseForce = 13f;
+    [Tooltip("必须明显低于 NPC 的 maxFleeSpeed，这样只要 NPC 有足够开阔的直线距离，差距就会持续拉开")]
     public float maxChaseSpeed = 5f;
 
     [Header("攻击")]
@@ -90,10 +94,14 @@ public class EnemyController : MonoBehaviour
     }
 
     /// <summary>
-    /// 手无寸铁才追猎；一旦目标抓起了任何东西，视为不再符合狩猎条件（也不主动逃跑，只是不继续追）。
+    /// 手无寸铁且还活着才追猎；一旦目标抓起了任何东西，视为不再符合狩猎条件（也不主动逃跑，只是不继续追）；
+    /// 目标已经死亡（消失）则直接放弃，不然会对着一具尸体持续"攻击"下去。
     /// </summary>
     private bool IsValidTarget(Transform target)
     {
+        var npc = target.GetComponent<NPCAttributes>();
+        if (npc != null && npc.Health <= 0f) return false;
+
         var actuator = target.GetComponent<CharacterActuator>();
         return actuator == null || actuator.CurrentGrabbedObject == null;
     }

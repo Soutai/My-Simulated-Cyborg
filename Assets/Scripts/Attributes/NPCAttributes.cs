@@ -156,9 +156,10 @@ public class NPCAttributes : MonoBehaviour
 
         if (Health <= 0f)
         {
-            Debug.Log($"<color=#FF0000>💀 [生存状态] 生命值归零，NPC 已死亡！</color>");
+            Debug.Log($"<color=#FF0000>💀 [生存状态] 生命值归零，NPC 已死亡，从世界中消失。</color>");
 
             GetComponent<AIBrainController>()?.InterruptAndClearGoal();
+            gameObject.SetActive(false);
         }
     }
 }

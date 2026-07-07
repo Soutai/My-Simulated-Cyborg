@@ -10,6 +10,7 @@ public class PromptManager : MonoBehaviour
         NpcPersonality personality,
         string currentTimeStr,
         string serializedRadarJson,
+        string serializedMemoryJson,
         string leftHandItem,
         string rightHandItem,
         string currentGoal = "无")
@@ -38,10 +39,18 @@ public class PromptManager : MonoBehaviour
             "- APPROACH: 靠近某个物体（推荐使用，AI只需给出 target_id）\n" +
             "- MOVE_DIRECTION: 朝指定方向移动一段距离（需 arg_x、arg_z、strength）\n" +
             "- GRAB / RELEASE / USE_ITEM: 必须包含 \"hand\" 字段（\"Left\" 或 \"Right\"）！\n" +
-            "- GRAB: 除了 hand，还必须提供 \"target_id\"，明确指出要抓取的具体物体，不要因为觉得目标\"很明显\"就省略！\n\n" +
+            "- GRAB: 除了 hand，还必须提供 \"target_id\"，明确指出要抓取的具体物体，不要因为觉得目标\"很明显\"就省略！\n" +
+            "- EXPLORE: 交给身体自主漫步探索（会自己避开障碍物、尽量不重复走过的地方），不需要提供任何参数。" +
+            "见下文第4节，没有明确目标时用这个，不要自己规划移动坐标。\n\n" +
 
             "## 2. 当前感知\n" +
             $"{serializedRadarJson}\n\n" +
+
+            "## 2.5 近期记忆（不在当前视野内，凭记忆推测的位置，仅供参考）\n" +
+            "- 这些是你之前亲眼见过、但现在已经不在视野范围/角度内的物体，位置是根据你现在的实际坐标重新换算过的。\n" +
+            "- confidence_note 会提示这份记忆有多新鲜；食物/武器这类不会自己移动的物体，记忆通常仍然准确；\n" +
+            "  敌人这类会动的物体，记忆越旧就越可能已经不在原地了，请自行判断要不要依赖这份信息去行动。\n" +
+            $"{serializedMemoryJson}\n\n" +
 
             "## 3. 核心行为与性格本能准则\n" +
             "- 你是大脑，只负责输出原子原语和行动计划。小脑只会忠实按顺序执行你下发的原子原语。\n" +
@@ -52,21 +61,23 @@ public class PromptManager : MonoBehaviour
             personalityRules + "\n\n" + // 🌟 注入非干预性的性格底层约束规则
 
             "## 4. 多步规划能力（核心机制）\n" +
-            "- 你拥有优秀的战略规划能力。**请每次思考时都制定至少包含2个步骤的连贯行动计划**（plan_steps），让小脑可以连续执行。\n" +
+            "- 你拥有优秀的战略规划能力。当你有明确的具体目标时（比如去拿某个东西、吃东西、攻击某个敌人），" +
+            "**请制定包含至少2个步骤的连贯行动计划**（plan_steps），让小脑可以连续执行，不要一次只规划一步。\n" +
             "- 你需要根据你的常识判断需要多少个步骤，把一个大目标分解成需要的步数。\n" +
-            "- **【重要】如果当前处于没有明确目的的任务（如探路、巡逻、全图搜寻目标），你必须进行长程大范围规划，单次行动计划【必须包含 15 到 20 个连续移动步骤】，以网格状、螺旋状或Z字形彻底探查未探索区域，严禁只规划2-3步！**\n" +
-            "- 探索/巡逻任务优秀示例（长程连续移动）：\n" +
-            "  - MOVE_DIRECTION(X=0, Z=4)前方探索 → MOVE_DIRECTION(X=4, Z=4)右前探索 → MOVE_DIRECTION(X=4, Z=0)右方折返 → MOVE_DIRECTION(X=4, Z=-4)右后探查 → MOVE_DIRECTION(X=0, Z=-4)后方扫尾\n" +
-            "- 推荐优先使用 APPROACH（靠近物体）和 MOVE_DIRECTION（方向移动）。\n" +
-            "- 对于移动步骤，请明确给出参数，让单次移动有明显距离。\n" +
-            "- 优秀示例：\n" +
+            "- 明确目标优秀示例：\n" +
             "  - APPROACH Stick → GRAB（Right） → APPROACH Wolf → USE_ITEM（Right）\n" +
             "  - MOVE_DIRECTION（向前） → APPROACH Fruit → GRAB（Left） → USE_ITEM（Left）\n" +
             "  - APPLY_FORCE 微调位置 → GRAB\n" +
             "- plan_steps 中每一项必须包含 description、arrival_op、hand（target_id / arg_x / arg_z / strength 根据 op 类型提供）。\n\n" +
-            "- 【战略惊醒锚点】：如果你当前处于大范围搜寻、巡逻、探路等没有明确终点的长程移动任务（单次规划15-20步），" +
-            "你必须在 JSON 的 `interrupt_anchor_type` 字段中，填入你本次搜寻的核心欲望目标类型（可选值：'Food'、'Enemy'、'Weapon'）。一旦身体在走路时雷达首次扫到该类型，" +
-            "小脑将立刻掐断走格子计划交还控制权。如果是去抓取眼前特定物品等短程确定性连招，请务必将其设为 'None'。\n" +
+            "- **【没有明确目标时——探索/巡逻/找东西】**：不要自己规划移动坐标去模拟"
+                + "\"随便走走\"，具体路线交给身体自主处理。`plan_steps` 只需要包含【唯一一个】步骤：" +
+            "`{ \"description\": \"...\", \"arrival_op\": \"EXPLORE\" }`。你的身体会自己找路、避开障碍物、" +
+            "尽量不重复走过的地方，不需要也不应该给出任何移动坐标参数。\n" +
+            "- 【战略惊醒锚点】：只要 plan_steps 用的是 EXPLORE（没有明确目标、正在探索/巡逻/找东西），" +
+            "就必须在 JSON 的 `interrupt_anchor_type` 字段中填入你这次探索的核心欲望目标类型" +
+            "（可选值：'Food'、'Enemy'、'Weapon'）。一旦身体在漫步途中雷达首次扫到该类型，" +
+            "小脑会立刻掐断漫步、强制交还控制权给你重新决策。如果是去抓取眼前特定物品等短程确定性连招（用的是 APPROACH/GRAB 等具体原语），" +
+            "请务必将其设为 'None'。\n" +
 
             "## 5. 绝对限制 JSON 响应格式\n" +
             "必须严格返回标准的 JSON 格式块，不要包含任何 markdown 解释。\n" +
