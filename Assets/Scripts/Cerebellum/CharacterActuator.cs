@@ -34,9 +34,17 @@ public class CharacterActuator : MonoBehaviour
     public GameObject RightHandObject => rightHandObject;
     public GameObject CurrentGrabbedObject => rightHandObject ?? leftHandObject;
 
+    // 🌟 供视觉扇形等外部系统读取当前"正面"朝向，本质就是这具身体上一次的移动方向
+    public Vector3 FacingDirection => facingDirection;
+
     // 🌟 NPC 当前正主动走向的目标（仅 APPROACH 执行期间非空）。
     // 供本能反射系统甄别"是我自己主动冲过去的"和"是它自己冲过来的"，避免自己主动接近目标时被误判成遭到偷袭。
     public GameObject CurrentApproachTarget { get; private set; }
+
+    // 🌟 是否真正静止（水平速度低于朝向更新阈值）。只有这时候 UpdateFacingDirection 才不会
+    // 每帧覆盖朝向，HearingReflex 之类的本能转向系统才能安全地直接设置 facingDirection，
+    // 不会跟"移动方向决定朝向"这条规则打架。
+    public bool IsNearlyStationary => new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z).magnitude < minSpeedToUpdateFacing;
 
     void Awake()
     {
@@ -61,6 +69,17 @@ public class CharacterActuator : MonoBehaviour
         if (horizontalVelocity.magnitude < minSpeedToUpdateFacing) return;
 
         facingDirection = horizontalVelocity.normalized;
+    }
+
+    /// <summary>
+    /// 🌟 本能转向专用：不经过大脑、不移动身体，只是把"正面"直接转向指定方向（听到声音时用）。
+    /// 只应在 IsNearlyStationary 为 true 时调用，否则下一帧就会被 UpdateFacingDirection 用真实移动方向覆盖掉。
+    /// </summary>
+    public void TurnFacingTowards(Vector3 direction)
+    {
+        direction.y = 0f;
+        if (direction.sqrMagnitude > 0.0001f)
+            facingDirection = direction.normalized;
     }
 
     public void StopAllPhysicalMovement()

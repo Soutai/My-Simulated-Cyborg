@@ -4,7 +4,7 @@ using System.Collections;
 using System.Collections.Generic;
 using EmbodiedAI.DTO;
 
-// 🌟 【强力躯干护栏】：强制要求 NPC 身上必须同时带有这七个组件，缺一不可，Unity 会在挂载时自动补齐
+// 🌟 【强力躯干护栏】：强制要求 NPC 身上必须同时带有这八个组件，缺一不可，Unity 会在挂载时自动补齐
 [RequireComponent(typeof(CharacterActuator))]
 [RequireComponent(typeof(LocalMotorController))]
 [RequireComponent(typeof(NPCAttributes))]
@@ -12,6 +12,7 @@ using EmbodiedAI.DTO;
 [RequireComponent(typeof(PromptManager))]
 [RequireComponent(typeof(GeminiHttpClient))]
 [RequireComponent(typeof(InstinctReflex))]
+[RequireComponent(typeof(HearingReflex))]
 public class AIBrainController : MonoBehaviour
 {
     [Header("🖥️ UI 元素 (只有 UI 需要手动拖拽)")]
