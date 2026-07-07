@@ -13,6 +13,9 @@ public class LocalMotorController : MonoBehaviour
 
     private bool isBusy = false;
 
+    // 🌟 供 InstinctReflex 判断"身体现在有没有在执行大脑下发的计划"，只有空闲时反射才接管移动
+    public bool IsBusy => isBusy;
+
     // 🌟 核心双缓冲队列
     private List<PlanStep> frontBuffer = new List<PlanStep>();
     private List<PlanStep> backBuffer = new List<PlanStep>();

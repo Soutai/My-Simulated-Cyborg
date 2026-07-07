@@ -75,6 +75,7 @@ public class AIBrainController : MonoBehaviour
     private void OnPhysicsBrainTick()
     {
         if (isThinking) return;
+        if (attributes != null && attributes.Health <= 0f) return; // 已死亡，不再继续思考/行动
 
         // 🌟 无论这次思考是常规定时器触发还是紧急打断触发，都在这里重新起算下一次常规节奏，
         // 避免紧急重新思考后不久又被定时器冗余触发一次

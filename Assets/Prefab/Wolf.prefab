@@ -15,6 +15,8 @@ GameObject:
   - component: {fileID: 4655519409197223114}
   - component: {fileID: 480270301806520621}
   - component: {fileID: 4223239605146531618}
+  - component: {fileID: 2505259992768999430}
+  - component: {fileID: 7199781919041035816}
   m_Layer: 0
   m_Name: Wolf
   m_TagString: Enemy
@@ -155,6 +157,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SemanticObject
   semanticType: 2
+  overrideDefaultDistance: 0
+  desiredApproachDistance: 0.65
+  maxGraspDistance: 1.25
 --- !u!114 &4223239605146531618
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -172,3 +177,35 @@ MonoBehaviour:
   OnToleranceDepleted:
     m_PersistentCalls:
       m_Calls: []
+--- !u!114 &2505259992768999430
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5976069799453766083}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 058c12adc48208a4c8fdaeae4d9da4c3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::HitFlash
+  flashColor: {r: 1, g: 0, b: 0, a: 1}
+  flashDuration: 0.15
+--- !u!114 &7199781919041035816
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5976069799453766083}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5c42689fc3018724f94eeb1a96ce0d56, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::EnemyController
+  perceptionRadius: 15
+  chaseForce: 15
+  maxChaseSpeed: 5
+  attackRange: 1.5
+  attackDamage: 10
+  attackInterval: 1.5

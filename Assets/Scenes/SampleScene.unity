@@ -903,6 +903,8 @@ GameObject:
   - component: {fileID: 1257545193}
   - component: {fileID: 1257545194}
   - component: {fileID: 1257545200}
+  - component: {fileID: 1257545201}
+  - component: {fileID: 1257545202}
   m_Layer: 0
   m_Name: NPC_Scarface
   m_TagString: Untagged
@@ -1019,7 +1021,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::AIBrainController
   monologueDisplay: {fileID: 906394210}
   actionDisplay: {fileID: 0}
-  dangerThreshold: 2.5
 --- !u!114 &1257545194
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1074,6 +1075,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::NPCAttributes
   satiety: 100
+  health: 100
   personality: 3
   satietySlider: {fileID: 2055211500}
   satietyPercentageText: {fileID: 1622342753}
@@ -1131,6 +1133,38 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f8d3fde8022d73b4486b1fc87288ed04, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::LocalMotorController
+--- !u!114 &1257545201
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1257545187}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a29672c012d0a1d4c870098eacf89819, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::InstinctReflex
+  dangerThreshold: 2.5
+  reflexThreshold: 4.5
+  fleeImpulseForce: 20
+  startleImpulseForce: 15
+  startleSwingAngleJitter: 45
+  stunnedDuration: 1
+--- !u!114 &1257545202
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1257545187}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 058c12adc48208a4c8fdaeae4d9da4c3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::HitFlash
+  flashColor: {r: 1, g: 0, b: 0, a: 1}
+  flashDuration: 0.15
 --- !u!1 &1302974974
 GameObject:
   m_ObjectHideFlags: 0
@@ -2081,7 +2115,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 5663957358355033251, guid: e0ffafcad85b8c2489d2fad7c81e627a, type: 3}
       propertyPath: m_LocalPosition.x
-      value: -10
+      value: -13.04
       objectReference: {fileID: 0}
     - target: {fileID: 5663957358355033251, guid: e0ffafcad85b8c2489d2fad7c81e627a, type: 3}
       propertyPath: m_LocalPosition.y
@@ -2139,6 +2173,10 @@ PrefabInstance:
     - target: {fileID: 1071120186064958712, guid: 24fb272a7101c9d45bd4f32e9b17bae8, type: 3}
       propertyPath: m_Name
       value: Stick
+      objectReference: {fileID: 0}
+    - target: {fileID: 1071120186064958712, guid: 24fb272a7101c9d45bd4f32e9b17bae8, type: 3}
+      propertyPath: m_IsActive
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4274655882614919770, guid: 24fb272a7101c9d45bd4f32e9b17bae8, type: 3}
       propertyPath: m_LocalPosition.x

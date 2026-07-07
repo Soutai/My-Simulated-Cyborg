@@ -4,6 +4,7 @@ using UnityEngine.Events;
 
 [RequireComponent(typeof(Rigidbody))]
 [RequireComponent(typeof(SemanticObject))] // 强行绑定语义标签，以此作为去配置中心拿数据的 Key
+[RequireComponent(typeof(HitFlash))] // 受击视觉反馈，自动补齐
 public class UniversalPhysicsEntity : MonoBehaviour
 {
     [Header("实时物理状态监控 (无需在面板配置)")]
@@ -16,6 +17,7 @@ public class UniversalPhysicsEntity : MonoBehaviour
 
     private Rigidbody rb;
     private SemanticObject semanticObj;
+    private HitFlash hitFlash;
 
     // 从配置中心动态拉取的只读物理规则
     private PhysicsProtocolConfig.PhysicsResistance physicsRule;
@@ -24,6 +26,7 @@ public class UniversalPhysicsEntity : MonoBehaviour
     {
         rb = GetComponent<Rigidbody>();
         semanticObj = GetComponent<SemanticObject>();
+        hitFlash = GetComponent<HitFlash>();
     }
 
     void Start()
@@ -73,6 +76,7 @@ public class UniversalPhysicsEntity : MonoBehaviour
         if (computedForce <= 0f) return;
 
         currentTolerance -= computedForce;
+        hitFlash?.Flash();
         Debug.Log($"<color=#FF6600>[物理原语驱动] 实体 {gameObject.name} (类型: {semanticObj.semanticType}) 正在承受物理冲击: {computedForce:F1}，剩余耐受度: {currentTolerance:F1}</color>");
 
         if (currentTolerance <= 0f && !isDepleted)

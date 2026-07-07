@@ -12,6 +12,7 @@ public enum NpcPersonality
     NEUTRAL         // 理性中立：纯粹基于物理得失计算
 }
 
+[RequireComponent(typeof(HitFlash))] // 受击视觉反馈，自动补齐
 public class NPCAttributes : MonoBehaviour
 {
     public const float MaxSatiety = 100f;
@@ -28,6 +29,21 @@ public class NPCAttributes : MonoBehaviour
     {
         get => satiety;
         private set => satiety = Mathf.Clamp(value, 0f, MaxSatiety);
+    }
+
+    public const float MaxHealth = 100f;
+
+    [Header("生命值 (0 - 100)")]
+    [Tooltip("被 Enemy 攻击时扣减，归零视为死亡")]
+    [SerializeField] private float health = MaxHealth;
+
+    /// <summary>
+    /// 当前生命值，读写统一走这个属性，自动夹在 [0, MaxHealth] 区间内。
+    /// </summary>
+    public float Health
+    {
+        get => health;
+        private set => health = Mathf.Clamp(value, 0f, MaxHealth);
     }
 
     [Header("性格/本能倾向设定")]
@@ -50,12 +66,14 @@ public class NPCAttributes : MonoBehaviour
 
     private Color startColor;
     private Renderer myRenderer;
+    private HitFlash hitFlash;
 
     void Awake()
     {
         // 🌟 用 GetComponentInChildren 而非 GetComponent：即便以后模型挂在子物体上也能找到
         myRenderer = GetComponentInChildren<Renderer>();
         if (myRenderer != null) startColor = myRenderer.material.color;
+        hitFlash = GetComponent<HitFlash>();
 
         if (satietySlider != null)
         {
@@ -76,7 +94,9 @@ public class NPCAttributes : MonoBehaviour
         UpdateUI();
 
         // 既存兼容逻辑：饱食度接近崩溃时，触发身体变色表现
-        if (Satiety <= lowSatietyThreshold)
+        // 🌟 受击闪光进行中时暂时让路，不然每帧都会把颜色抢回来，闪光就看不见了
+        bool isFlashing = hitFlash != null && hitFlash.IsFlashing;
+        if (!isFlashing && Satiety <= lowSatietyThreshold)
         {
             SetColor(lowSatietyColor);
         }
@@ -120,5 +140,25 @@ public class NPCAttributes : MonoBehaviour
 
         string sourceName = source != null ? source.name : "未知来源";
         Debug.Log($"<color=#00FF00>[生存状态] 🍖 成功进食，[{sourceName}] 已被消灭，饱食度重回巅峰！</color>");
+    }
+
+    /// <summary>
+    /// 🌟 受到伤害结算：目前由 EnemyController 的攻击调用。
+    /// </summary>
+    public void TakeDamage(float amount)
+    {
+        if (Health <= 0f) return; // 已经死亡，不再重复结算
+
+        Health -= amount;
+        hitFlash?.Flash();
+
+        Debug.Log($"<color=#CC0000>[生存状态] 💥 受到 {amount:F1} 点伤害，剩余生命值: {Health:F1}</color>");
+
+        if (Health <= 0f)
+        {
+            Debug.Log($"<color=#FF0000>💀 [生存状态] 生命值归零，NPC 已死亡！</color>");
+
+            GetComponent<AIBrainController>()?.InterruptAndClearGoal();
+        }
     }
 }

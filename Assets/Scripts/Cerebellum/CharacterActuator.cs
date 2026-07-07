@@ -385,35 +385,20 @@ public class CharacterActuator : MonoBehaviour
     }
 
     /// <summary>
-    /// 🌟 本能反射专用：不经过大脑指令、瞬间给身体一个冲量（逃跑/惊跳后退用）。
+    /// 🌟 本能反射专用：不经过大脑指令、持续朝某个方向施力（逃跑用）。
+    /// 只有 InstinctReflex 判断身体空闲时才会调用，不会跟正常的指令序列打架。
     /// </summary>
-    public void ApplyInstinctImpulse(Vector3 impulse)
+    public void ApplyInstinctForce(Vector3 direction, float force, float maxSpeed)
     {
-        rb.AddForce(impulse, ForceMode.Impulse);
-    }
+        rb.AddForce(direction * force, ForceMode.Force);
 
-    /// <summary>
-    /// 🌟 本能反射专用：猝不及防时手里有武器就本能地朝一个不精确的方向乱挥一下。
-    /// 只有手上物体的 USE_ITEM 效果本来就是 SweepAttack 时才会生效，不针对具体物体类型写死判断。
-    /// </summary>
-    public void InstinctFlailSwing(float angleJitterDegrees)
-    {
-        GameObject heldItem = CurrentGrabbedObject;
-        if (heldItem == null) return;
-
-        SemanticObject semantic = heldItem.GetComponent<SemanticObject>();
-        if (semantic == null) return;
-
-        var effect = PhysicsProtocolConfig.GetUseEffect(semantic.semanticType);
-        if (effect.kind != PhysicsProtocolConfig.UseEffectKind.SweepAttack) return;
-
-        float jitter = Random.Range(-angleJitterDegrees, angleJitterDegrees);
-        Vector3 flailDirection = Quaternion.Euler(0f, jitter, 0f) * facingDirection;
-
-        string handLabel = (heldItem == leftHandObject) ? "LEFT" : "RIGHT";
-        Debug.Log($"<color=#FF9900>[本能反射] 😱 手忙脚乱地挥舞了【{handLabel}手】的{heldItem.name}！</color>");
-
-        PerformSweepAttack(effect, flailDirection);
+        Vector3 vel = rb.linearVelocity;
+        Vector3 horizontalVel = new Vector3(vel.x, 0f, vel.z);
+        if (horizontalVel.magnitude > maxSpeed)
+        {
+            Vector3 limited = horizontalVel.normalized * maxSpeed;
+            rb.linearVelocity = new Vector3(limited.x, vel.y, limited.z);
+        }
     }
 
     private void PerformRelease(string hand)
