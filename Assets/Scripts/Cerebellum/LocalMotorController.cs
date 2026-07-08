@@ -64,10 +64,12 @@ public class LocalMotorController : MonoBehaviour
             if (CheckRadarForAnchor(anchor))
             {
                 Debug.Log($"<color=#00FFFF>[小脑感官唤醒] 👁️ 警报！雷达扫描到与长任务终极锚点一致的类型【{anchor}】！</color>");
-                Debug.Log("<color=#00FFFF>[小脑感官唤醒] 🛑 掐断当前漫无目的的探索/长程任务，强制交还大脑决策。</color>");
+                Debug.Log("<color=#00FFFF>[小脑感官唤醒] 🔔 叫醒大脑重新决策——不是危险，先不打断身体正在进行的漫步。</color>");
 
+                // 🌟 软性打断：只是发现了值得重新思考的东西，不是紧急情况，不强行停下身体——
+                // 身体会继续漫步，直到大脑真的给出新指令为止，避免网络请求这段真实延迟期间站着发呆。
                 // brain.InterruptAndClearGoal() 内部会调用 smallBrain.InterruptAndClear()，这里不需要重复调用
-                brain.InterruptAndClearGoal();
+                brain.InterruptAndClearGoal(hardStopMovement: false);
 
                 // 立刻强制大脑联网重新思考。此时雷达数据里已经有目标了，大脑会下达精准单步连招
                 brain.RequestImmediateThink();
@@ -143,6 +145,9 @@ public class LocalMotorController : MonoBehaviour
             return;
         }
 
+        // 🌟 只有真正切换到具体原语（APPROACH/GRAB 等）时才停止漫步——软性打断（锚点唤醒）之后
+        // 身体可能还在继续漫步，这里才是真正需要"接管身体"的那一刻，不能更早停，否则又会制造空窗期
+        wanderReflex.StopWandering();
         actuator.ExecutePrimitiveSequence(frontBuffer, null);
     }
 
@@ -174,7 +179,12 @@ public class LocalMotorController : MonoBehaviour
         }
         else
         {
-            Debug.Log("[小脑] 💤 所有计划执行完毕，智能体进入静默观察状态。");
+            Debug.Log("[小脑] 💤 所有计划执行完毕，没有排队的后续计划，立刻叫醒大脑决定下一步。");
+            // 🌟 补上第三个"发呆缺口"：本能脱险、锚点软性打断都已经会主动叫醒大脑，
+            // 唯独"普通任务正常做完"这条路径漏了——之前只是默默进入静默观察，干等最长 20 秒的
+            // 常规思考定时器。大多数计划（APPROACH+GRAB 这类）本来就是几秒钟的短任务，
+            // 跑完了没有理由继续发呆，应该立刻让大脑决定接下来干什么。
+            brain?.RequestImmediateThink();
         }
     }
 
@@ -198,15 +208,23 @@ public class LocalMotorController : MonoBehaviour
     }
 
     /// <summary>
-    /// 💥 本能中断急停接口
+    /// 💥 中断接口。hardStopMovement=true（默认，危险/死亡用）会连漫步一起硬停；
+    /// hardStopMovement=false（锚点唤醒这种非紧急重新思考用）只清空计划缓冲区、
+    /// 不打断身体正在进行的漫步——避免"发个网络请求就先僵住干等"的空窗期。
     /// </summary>
-    public void InterruptAndClear()
+    public void InterruptAndClear(bool hardStopMovement = true)
     {
-        Debug.LogWarning("[小脑] 💥 收到本能急停指令！格式化所有前后台缓冲区，强制踩死物理刹车！");
+        Debug.LogWarning(hardStopMovement
+            ? "[小脑] 💥 收到本能急停指令！格式化所有前后台缓冲区，强制踩死物理刹车！"
+            : "[小脑] 🔔 收到软性重新思考指令，清空计划缓冲区，但保留身体正在进行的漫步。");
         frontBuffer.Clear();
         backBuffer.Clear();
         isBusy = false;
-        suppressNextFinishLog = true; // 紧接着触发的 actuator.StopAllPhysicalMovement 会连带产生一次多余回调
-        wanderReflex?.StopWandering(); // EXPLORE 不经过 actuator 的原语序列，StopAllPhysicalMovement 管不到它，这里单独喊停
+
+        if (hardStopMovement)
+        {
+            suppressNextFinishLog = true; // 紧接着触发的 actuator.StopAllPhysicalMovement 会连带产生一次多余回调
+            wanderReflex?.StopWandering(); // EXPLORE 不经过 actuator 的原语序列，StopAllPhysicalMovement 管不到它，这里单独喊停
+        }
     }
 }

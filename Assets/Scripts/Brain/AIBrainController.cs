@@ -192,16 +192,23 @@ public class AIBrainController : MonoBehaviour
             pendingImmediateThink = true; // 🌟 请求飞行中，先记下来，等收尾时补上，不要静默丢弃
     }
 
-    public void InterruptAndClearGoal()
+    /// <summary>
+    /// 🌟 hardStopMovement 区分两种打断的紧迫程度：
+    /// - 危险/死亡（默认 true）：必须硬停——不然漫步的力和本能逃跑的力会同时作用在刚体上互相打架。
+    /// - 锚点唤醒（传 false）：只是"发现了值得重新思考的东西"，不是紧急情况，没必要硬停身体——
+    ///   身体可以继续漫步，一直走到大脑真的给出新指令为止，避免"发个网络请求就先僵住干等"这种
+    ///   看起来像发呆的空窗期。网络请求本身是有真实延迟的，硬停只应该留给真正需要立刻停下来的场景。
+    /// </summary>
+    public void InterruptAndClearGoal(bool hardStopMovement = true)
     {
         currentGoal = "无";
         currentInterruptAnchor = null; // 打断时同步复位锚点
 
         if (smallBrain != null)
         {
-            smallBrain.InterruptAndClear();
+            smallBrain.InterruptAndClear(hardStopMovement);
         }
-        if (actuator != null)
+        if (hardStopMovement && actuator != null)
         {
             actuator.StopAllPhysicalMovement();
         }

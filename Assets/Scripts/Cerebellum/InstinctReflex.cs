@@ -33,6 +33,7 @@ public class InstinctReflex : MonoBehaviour
     private CharacterActuator actuator;
     private LocalMotorController smallBrain;
     private AIBrainController brain;
+    private WanderReflex wanderReflex;
 
     // 🌟 供外部（LocalMotorController）判断"身体现在是不是被本能反射占用"，
     // 占用期间大脑新下发的计划一律锁进后台缓冲区，不能抢过来打断本能。
@@ -55,6 +56,7 @@ public class InstinctReflex : MonoBehaviour
         actuator = GetComponent<CharacterActuator>();
         smallBrain = GetComponent<LocalMotorController>();
         brain = GetComponent<AIBrainController>();
+        wanderReflex = GetComponent<WanderReflex>();
     }
 
     void FixedUpdate()
@@ -109,10 +111,15 @@ public class InstinctReflex : MonoBehaviour
 
         // 🌟 本能优先于决策：大脑当前的计划可能对这个危险一无所知（比如长程探索计划
         // 只在雷达扫到"武器"时才会被打断），身体正忙也要强行抢回控制权，不能干等它空闲。
-        if (smallBrain != null && smallBrain.IsBusy && brain != null)
+        //
+        // 🌟 这里不能只看 smallBrain.IsBusy——锚点唤醒引入了"软性打断"之后，身体有可能处于
+        // isBusy=false 但 WanderReflex 仍在漫步（等大脑回应）的中间状态。如果只看 isBusy，
+        // 这种情况下危险来了却不会真的抢控制权，本能的推力会跟漫步的推力在刚体上同时生效、互相打架。
+        bool bodyOccupied = (smallBrain != null && smallBrain.IsBusy) || (wanderReflex != null && wanderReflex.IsWandering);
+        if (bodyOccupied && brain != null)
         {
-            Debug.LogWarning("<color=red>⚡ [本能反射] 大脑当前计划与眼下危险无关，强行打断，本能抢回身体控制权！</color>");
-            brain.InterruptAndClearGoal();
+            Debug.LogWarning("<color=red>⚡ [本能反射] 身体正在忙于跟危险无关的事，强行打断，本能抢回身体控制权！</color>");
+            brain.InterruptAndClearGoal(); // hardStopMovement 默认 true，会连漫步一起硬停
         }
     }
 
