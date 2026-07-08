@@ -39,6 +39,9 @@ public class AIBrainController : MonoBehaviour
     // AIBrainController.cs 追加对外接口
     public SemanticType? CurrentInterruptAnchor => currentInterruptAnchor;
 
+    // 🌟 供 UI 面板显示"当前目标"，不用再让面板脚本自己另外持有一份状态
+    public string CurrentGoal => currentGoal;
+
     void Awake()
     {
         // 🌟 在本地一口气自动抓取全部挂在自己身上的组件，零性能开销，100% 自动化
@@ -103,8 +106,9 @@ public class AIBrainController : MonoBehaviour
             currentGoal
         );
 
+        // 🌟 不再在这里把 monologueDisplay 覆盖成"思考中..."——保留上一次的回复文本，
+        // 直到下一次真的收到新回复时才替换，UI 上不会出现"思考中"这种一闪而过的空白态。
         isThinking = true;
-        if (monologueDisplay != null) monologueDisplay.text = "思考中...";
 
         httpClient.PostPrompt(finalPrompt, OnBrainResponseReceived, OnAIRequestFailed);
     }

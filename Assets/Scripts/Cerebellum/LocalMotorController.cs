@@ -148,7 +148,7 @@ public class LocalMotorController : MonoBehaviour
         // 🌟 只有真正切换到具体原语（APPROACH/GRAB 等）时才停止漫步——软性打断（锚点唤醒）之后
         // 身体可能还在继续漫步，这里才是真正需要"接管身体"的那一刻，不能更早停，否则又会制造空窗期
         wanderReflex.StopWandering();
-        actuator.ExecutePrimitiveSequence(frontBuffer, null);
+        actuator.ExecutePrimitiveSequence(frontBuffer);
     }
 
     private static bool IsExploreStep(PlanStep step)

@@ -49,6 +49,13 @@ public class CharacterActuator : MonoBehaviour
     // 🌟 只读地暴露当前真实速度，供本地反射系统（诊断日志等）读取，不用各自额外持有 Rigidbody 引用
     public Vector3 CurrentVelocity => rb.linearVelocity;
 
+    // 🌟 供 UI 面板显示"当前执行的动作"——序列外（空闲/漫步中）时为空字符串
+    public string CurrentActionDescription { get; private set; } = "";
+
+    // 🌟 供 UI 面板显示"队列里还没轮到执行的动作"——当前正在执行的那一步已经从这个列表里摘出去了
+    public IReadOnlyList<PlanStep> RemainingQueuedSteps => remainingQueuedSteps;
+    private readonly List<PlanStep> remainingQueuedSteps = new List<PlanStep>();
+
     void Awake()
     {
         rb = GetComponent<Rigidbody>();
@@ -91,11 +98,13 @@ public class CharacterActuator : MonoBehaviour
         rb.linearVelocity = Vector3.zero;
         isExecuting = false;
         CurrentApproachTarget = null; // 协程被强制打断，不会走到 ApproachTargetRoutine 自己的清理代码，这里补上
+        CurrentActionDescription = "";
+        remainingQueuedSteps.Clear();
         // 确保被中断时也能通知小脑解锁
         OnSequenceFinished?.Invoke();
     }
 
-    public void ExecutePrimitiveSequence(List<PlanStep> commands, UnityEngine.UI.Text actionDisplay)
+    public void ExecutePrimitiveSequence(List<PlanStep> commands)
     {
         if (commands == null || commands.Count == 0)
         {
@@ -104,16 +113,23 @@ public class CharacterActuator : MonoBehaviour
         }
         // 只有开启新序列时才会主动清理一次旧动作
         StopAllCoroutines();
-        StartCoroutine(SequenceRoutine(commands, actionDisplay));
+        StartCoroutine(SequenceRoutine(commands));
     }
 
-    private IEnumerator SequenceRoutine(List<PlanStep> commands, UnityEngine.UI.Text actionDisplay)
+    private IEnumerator SequenceRoutine(List<PlanStep> commands)
     {
         isExecuting = true;
+        remainingQueuedSteps.Clear();
+        remainingQueuedSteps.AddRange(commands); // 一开始整份计划都算"排队中"
+
         foreach (var cmd in commands)
         {
             if (cmd == null || string.IsNullOrEmpty(cmd.arrival_op)) continue;
             if (!isExecuting) yield break;
+
+            // 🌟 这一步要开始执行了，从"队列"里摘出来，同时记下"当前正在执行的动作"供 UI 显示
+            remainingQueuedSteps.Remove(cmd);
+            CurrentActionDescription = !string.IsNullOrEmpty(cmd.description) ? cmd.description : cmd.arrival_op;
 
             string opType = cmd.arrival_op.ToUpper().Trim();
             string TargetHand = (!string.IsNullOrEmpty(cmd.hand) && cmd.hand.ToUpper().Trim() == "LEFT") ? "LEFT" : "RIGHT";
@@ -152,6 +168,7 @@ public class CharacterActuator : MonoBehaviour
             StabilizeMovement();
         }
         isExecuting = false;
+        CurrentActionDescription = "";
         // 🌟 核心修复：全套动作做完了，通知小脑解开 busy 锁
         OnSequenceFinished?.Invoke();
     }

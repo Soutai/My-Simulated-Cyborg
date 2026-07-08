@@ -56,7 +56,7 @@ public class WanderReflex : MonoBehaviour
         recentTrail.Clear();
         diagnosticLogTimer = 0f;
         lastLoggedPosition = transform.position;
-        Debug.Log("<color=#33CCCC>[漫步反射] 🚶 开始本地自主探索。</color>");
+        // Debug.Log("<color=#33CCCC>[漫步反射] 🚶 开始本地自主探索。</color>"); // 🌟 暂时注释，需要时取消注释即可
     }
 
     /// <summary>由 LocalMotorController 在任何中断路径（锚点唤醒/本能打断）里调用，停止漫步</summary>
@@ -64,7 +64,7 @@ public class WanderReflex : MonoBehaviour
     {
         if (!IsWandering) return;
         IsWandering = false;
-        Debug.Log("<color=#33CCCC>[漫步反射] 🛑 本地探索结束，交还身体控制权。</color>");
+        // Debug.Log("<color=#33CCCC>[漫步反射] 🛑 本地探索结束，交还身体控制权。</color>"); // 🌟 暂时注释，需要时取消注释即可
     }
 
     void FixedUpdate()
@@ -84,22 +84,22 @@ public class WanderReflex : MonoBehaviour
             currentDirection = PickNewDirection();
             directionTimer = Random.Range(WanderProtocolConfig.MinDirectionHold, WanderProtocolConfig.MaxDirectionHold);
 
-            Debug.Log($"<color=#33CCCC>[漫步反射] 🔄 换方向 | 原因: {reason} | 旧方向: {oldDirection:F2} → 新方向: {currentDirection:F2} | 维持 {directionTimer:F1}s</color>");
+            // Debug.Log($"<color=#33CCCC>[漫步反射] 🔄 换方向 | 原因: {reason} | 旧方向: {oldDirection:F2} → 新方向: {currentDirection:F2} | 维持 {directionTimer:F1}s</color>"); // 🌟 暂时注释，需要时取消注释即可
         }
 
         actuator.ApplyInstinctForce(currentDirection, WanderProtocolConfig.WanderForce, WanderProtocolConfig.MaxWanderSpeed);
 
-        // 🌟 排障诊断：每隔 1 秒打一次速度/位移快照
-        diagnosticLogTimer += Time.fixedDeltaTime;
-        if (diagnosticLogTimer >= 1f)
-        {
-            diagnosticLogTimer = 0f;
-            float currentSpeed = new Vector3(actuator.CurrentVelocity.x, 0f, actuator.CurrentVelocity.z).magnitude;
-            float displacedSinceLast = Vector3.Distance(transform.position, lastLoggedPosition);
-            lastLoggedPosition = transform.position;
-
-            Debug.Log($"<color=#227777>[漫步反射诊断] 🔍 当前速度: {currentSpeed:F2} m/s (上限 {WanderProtocolConfig.MaxWanderSpeed:F1}) | 过去1s位移: {displacedSinceLast:F2}m | 当前方向: {currentDirection:F2} | 前方畅通距离: {aheadClearDistance:F2}/{WanderProtocolConfig.ObstacleLookahead:F1}</color>");
-        }
+        // 🌟 排障诊断：每隔 1 秒打一次速度/位移快照（暂时注释掉，需要时取消注释即可）
+        // diagnosticLogTimer += Time.fixedDeltaTime;
+        // if (diagnosticLogTimer >= 1f)
+        // {
+        //     diagnosticLogTimer = 0f;
+        //     float currentSpeed = new Vector3(actuator.CurrentVelocity.x, 0f, actuator.CurrentVelocity.z).magnitude;
+        //     float displacedSinceLast = Vector3.Distance(transform.position, lastLoggedPosition);
+        //     lastLoggedPosition = transform.position;
+        //
+        //     Debug.Log($"<color=#227777>[漫步反射诊断] 🔍 当前速度: {currentSpeed:F2} m/s (上限 {WanderProtocolConfig.MaxWanderSpeed:F1}) | 过去1s位移: {displacedSinceLast:F2}m | 当前方向: {currentDirection:F2} | 前方畅通距离: {aheadClearDistance:F2}/{WanderProtocolConfig.ObstacleLookahead:F1}</color>");
+        // }
     }
 
     private void SampleTrail()
