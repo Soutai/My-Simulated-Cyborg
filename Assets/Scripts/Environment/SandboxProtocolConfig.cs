@@ -67,7 +67,7 @@ public static class SandboxProtocolConfig
                 return $"这是一根质地坚硬的长条刚体，可以被抓取。如果你靠近它并执行 GRAB 成功将其握在手中，它的坐标将跟随你。拿着它时执行 USE_ITEM 会向前产生半径{effect.effectRadius:F0}米的横扫物理撞击，可击退并伤害{effect.affectedTag}。";
             }
             case SemanticType.Enemy:
-                return "这是一只具有高度敌意、处于游荡状态的动态生物。它会持续追踪并撕咬靠近的无武器目标。它害怕高强度的物理撞击。";
+                return "这是一只具有高度敌意、处于游荡状态的动态生物。不管你手上有没有武器，只要进入它的感知范围，它就会主动追击并撕咬你。它害怕高强度的物理撞击。";
             default:
                 return "未知物理实体，未定义其运作机制。";
         }

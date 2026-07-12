@@ -4,8 +4,8 @@ using UnityEngine;
 /// 敌对生物的写死行为逻辑：不联网、不经过大模型，纯粹的感知-追击-攻击状态机。
 /// 感知范围内出现挂了 NPCAttributes 的目标就冲上去，进入攻击范围后按固定频率咬一口。
 ///
-/// 只追猎"手无寸铁"的目标，呼应 SandboxProtocolConfig 里 Enemy 机制说明文字自己的设定
-/// （"持续追踪并撕咬靠近的无武器目标"）——这样机制描述发给大模型看的时候才是真话，
+/// 只要还活着、进入感知范围就会被追猎，不管手上有没有武器——呼应 SandboxProtocolConfig
+/// 里 Enemy 机制说明文字自己的设定，这样机制描述发给大模型看的时候才是真话，
 /// 不会出现"文档说的和实际发生的不一样"的情况。
 /// </summary>
 [RequireComponent(typeof(Rigidbody))]
@@ -70,7 +70,7 @@ public class EnemyController : MonoBehaviour
     }
 
     /// <summary>
-    /// 已有目标且仍然满足条件（在感知范围内、依然手无寸铁）就继续追它，不满足条件才重新搜索。
+    /// 已有目标且仍然满足条件（在感知范围内、还活着）就继续追它，不满足条件才重新搜索。
     /// </summary>
     private void FindTarget()
     {
@@ -94,16 +94,14 @@ public class EnemyController : MonoBehaviour
     }
 
     /// <summary>
-    /// 手无寸铁且还活着才追猎；一旦目标抓起了任何东西，视为不再符合狩猎条件（也不主动逃跑，只是不继续追）；
+    /// 🌟 只要还活着就是有效猎物，不管手上有没有武器——狼不怕武器，只怕武器打出来的物理撞击
+    /// （这是 UniversalPhysicsEntity 那套物理耐受度系统的事，跟这里"要不要追"完全是两回事）。
     /// 目标已经死亡（消失）则直接放弃，不然会对着一具尸体持续"攻击"下去。
     /// </summary>
     private bool IsValidTarget(Transform target)
     {
         var npc = target.GetComponent<NPCAttributes>();
-        if (npc != null && npc.Health <= 0f) return false;
-
-        var actuator = target.GetComponent<CharacterActuator>();
-        return actuator == null || actuator.CurrentGrabbedObject == null;
+        return npc == null || npc.Health > 0f;
     }
 
     private void ChaseTarget()

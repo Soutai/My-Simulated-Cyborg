@@ -197,6 +197,16 @@ public class AIBrainController : MonoBehaviour
     }
 
     /// <summary>
+    /// 🌟 供 LocalMotorController 在"无声接续后台缓冲区计划"时调用——这条路径没有经过一次新的
+    /// OnBrainResponseReceived，currentGoal 不会自动更新，需要手动把目标文本还原成那份计划本来对应的目标，
+    /// 不然 UI 上会一直显示"无"，跟身体实际正在做的事对不上。
+    /// </summary>
+    public void RestoreGoal(string goal)
+    {
+        currentGoal = goal;
+    }
+
+    /// <summary>
     /// 🌟 hardStopMovement 区分两种打断的紧迫程度：
     /// - 危险/死亡（默认 true）：必须硬停——不然漫步的力和本能逃跑的力会同时作用在刚体上互相打架。
     /// - 锚点唤醒（传 false）：只是"发现了值得重新思考的东西"，不是紧急情况，没必要硬停身体——

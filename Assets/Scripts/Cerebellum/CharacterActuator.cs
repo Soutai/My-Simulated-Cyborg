@@ -37,9 +37,13 @@ public class CharacterActuator : MonoBehaviour
     // 🌟 供视觉扇形等外部系统读取当前"正面"朝向，本质就是这具身体上一次的移动方向
     public Vector3 FacingDirection => facingDirection;
 
-    // 🌟 NPC 当前正主动走向的目标（仅 APPROACH 执行期间非空）。
-    // 供本能反射系统甄别"是我自己主动冲过去的"和"是它自己冲过来的"，避免自己主动接近目标时被误判成遭到偷袭。
-    public GameObject CurrentApproachTarget { get; private set; }
+    // 🌟 NPC 当前正在交战/追求的目标。由 LocalMotorController 在每次真正开始执行一份新的
+    // 前台计划时刷新（见 UpdateEngagementTargetFromPlan），覆盖 APPROACH→USE_ITEM 全程，
+    // 也覆盖两轮计划之间等待大脑网络回复的空窗期——只要大脑还没有换目标（或换成无目标的 EXPLORE），
+    // 就一直算"还在交战"，不会因为一小段 2 步计划刚好执行完就重新暴露给本能。
+    // 供本能反射系统甄别"这是我自己主动选择要打/要接近的目标"和"这是它自己冲过来的"，
+    // 避免自己主动接近、甚至已经动手交战的目标，被误判成遭到偷袭而强行打断计划逃跑。
+    public GameObject CurrentEngagementTarget { get; private set; }
 
     // 🌟 是否真正静止（水平速度低于朝向更新阈值）。只有这时候 UpdateFacingDirection 才不会
     // 每帧覆盖朝向，HearingReflex 之类的本能转向系统才能安全地直接设置 facingDirection，
@@ -97,7 +101,7 @@ public class CharacterActuator : MonoBehaviour
         StopAllCoroutines();
         rb.linearVelocity = Vector3.zero;
         isExecuting = false;
-        CurrentApproachTarget = null; // 协程被强制打断，不会走到 ApproachTargetRoutine 自己的清理代码，这里补上
+        CurrentEngagementTarget = null; // 协程被强制打断，不会走到 SequenceRoutine 自己收尾的清理代码，这里补上
         CurrentActionDescription = "";
         remainingQueuedSteps.Clear();
         // 确保被中断时也能通知小脑解锁
@@ -169,8 +173,33 @@ public class CharacterActuator : MonoBehaviour
         }
         isExecuting = false;
         CurrentActionDescription = "";
+        // 🌟 这里不再顺手清空 CurrentEngagementTarget——是否还在交战由下一份即将执行的计划决定
+        // （见 UpdateEngagementTargetFromPlan），不能因为这一小段 2 步计划恰好跑完了，就在等待
+        // 大脑下一轮网络回复的空窗期里让刚打过的目标突然重新暴露成"贴身威胁"。
         // 🌟 核心修复：全套动作做完了，通知小脑解开 busy 锁
         OnSequenceFinished?.Invoke();
+    }
+
+    /// <summary>
+    /// 🌟 供 LocalMotorController 在每次真正开始执行一份新的前台计划前调用（无论接下来走
+    /// EXPLORE 还是具体原语序列）：扫描计划里第一个点名了 target_id 的步骤（通常是 APPROACH），
+    /// 解析成真正的 GameObject 作为"当前交战目标"；没有任何步骤带 target_id（比如 EXPLORE、
+    /// 纯 MOVE_DIRECTION）就清空为 null，代表大脑已经不再针对某个具体物体行动。
+    /// </summary>
+    public void UpdateEngagementTargetFromPlan(List<PlanStep> commands)
+    {
+        CurrentEngagementTarget = ResolveEngagementTarget(commands);
+    }
+
+    private GameObject ResolveEngagementTarget(List<PlanStep> commands)
+    {
+        foreach (var cmd in commands)
+        {
+            if (cmd == null || string.IsNullOrEmpty(cmd.target_id)) continue;
+            GameObject resolved = WorldObjectRegistry.Find(cmd.target_id) ?? WorldObjectRegistry.FindFuzzy(cmd.target_id);
+            if (resolved != null) return resolved;
+        }
+        return null;
     }
 
     private IEnumerator ApproachTargetRoutine(string targetId, float strength = 1f)
@@ -181,8 +210,6 @@ public class CharacterActuator : MonoBehaviour
             Debug.LogWarning($"[APPROACH] 找不到目标: {targetId}");
             yield break;
         }
-
-        CurrentApproachTarget = target;
 
         // ==================== 【新配置系统】优先读取 ====================
         // 找不到 SemanticObject 时不再瞎猜类型，直接用中性的默认停止距离
@@ -296,8 +323,6 @@ public class CharacterActuator : MonoBehaviour
         {
             Debug.Log($"<color=green>[APPROACH] 正常结束 → {targetId}，总耗时 {timer:F1}s</color>");
         }
-
-        CurrentApproachTarget = null;
     }
 
     private IEnumerator MoveDirectionRoutine(float argX, float argZ, float strength = 1f)

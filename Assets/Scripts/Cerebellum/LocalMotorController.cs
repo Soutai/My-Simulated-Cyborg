@@ -23,6 +23,10 @@ public class LocalMotorController : MonoBehaviour
     private List<PlanStep> frontBuffer = new List<PlanStep>();
     private List<PlanStep> backBuffer = new List<PlanStep>();
 
+    // 🌟 后台缓冲区计划对应的目标文本——万一之后是"无声接续"（不经过一次新的大脑回复）恢复执行，
+    // 用这个把 AIBrainController.currentGoal 正确还原，不然 UI 上会一直显示"无"跟实际行为对不上
+    private string backBufferGoal = "";
+
     // 🌟 复用缓冲区，避免每帧 OverlapSphere 产生 GC 分配
     private readonly Collider[] anchorOverlapBuffer = new Collider[32];
 
@@ -128,6 +132,7 @@ public class LocalMotorController : MonoBehaviour
             string reason = occupiedByInstinct ? "身体正被本能反射占用" : "身体正忙";
             Debug.Log($"<color=orange>[小脑] 💾 {reason}，新指令无缝锁入后台缓冲区(Back Buffer)。目标: {brainGoal}</color>");
             backBuffer = incomingCommands;
+            backBufferGoal = brainGoal;
         }
     }
 
@@ -136,6 +141,12 @@ public class LocalMotorController : MonoBehaviour
         if (frontBuffer.Count == 0) return;
 
         isBusy = true;
+
+        // 🌟 在真正开始执行这份计划之前，统一刷新"当前交战目标"——不管接下来走的是 EXPLORE
+        // 还是具体原语序列都要刷新。目标没变（比如连续两轮都在打同一只狼）就无缝续上豁免，
+        // 目标变了或者这份计划根本没有 target_id（比如 EXPLORE）就正确清空，不会让本能反射
+        // 误把"上一份计划已经打完但还没等到下一份计划"的空窗期当成新的贴身威胁。
+        actuator.UpdateEngagementTargetFromPlan(frontBuffer);
 
         // 🌟 EXPLORE 是开放式的本地漫步，不是一个"做完就结束"的定长原语，不走 CharacterActuator
         // 的原语序列——交给 WanderReflex 持续接管，直到锚点唤醒或本能反射把控制权抢回去为止。
@@ -172,6 +183,7 @@ public class LocalMotorController : MonoBehaviour
         if (backBuffer.Count > 0)
         {
             Debug.Log($"<color=lime>[小脑] ⚡ 零延迟无缝切换！将后台缓冲区(Back Buffer)激活推进！</color>");
+            brain?.RestoreGoal(backBufferGoal); // 这条路径没有经过大脑的新回复，得手动把目标文本还原
             frontBuffer = new List<PlanStep>(backBuffer);
             backBuffer.Clear();
 
@@ -199,6 +211,7 @@ public class LocalMotorController : MonoBehaviour
         if (backBuffer.Count > 0)
         {
             Debug.Log("<color=lime>[小脑] ⚡ 本能反射已解除，接续执行期间攒下的后台缓冲区(Back Buffer)！</color>");
+            brain?.RestoreGoal(backBufferGoal); // 这条路径没有经过大脑的新回复，得手动把目标文本还原
             frontBuffer = new List<PlanStep>(backBuffer);
             backBuffer.Clear();
             ExecuteFrontBuffer();
@@ -209,16 +222,21 @@ public class LocalMotorController : MonoBehaviour
 
     /// <summary>
     /// 💥 中断接口。hardStopMovement=true（默认，危险/死亡用）会连漫步一起硬停；
-    /// hardStopMovement=false（锚点唤醒这种非紧急重新思考用）只清空计划缓冲区、
+    /// hardStopMovement=false（锚点唤醒这种非紧急重新思考用）只清空正在执行的前台计划、
     /// 不打断身体正在进行的漫步——避免"发个网络请求就先僵住干等"的空窗期。
+    ///
+    /// 🌟 无论哪种情况都不清空 backBuffer——它是"排队等待、还没开始执行"的未来计划，
+    /// 跟当前的紧急状况没有任何物理冲突，没理由因为打断了正在做的事就连它一起扔掉。
+    /// 之前这里连 backBuffer 一起清掉，导致每次本能打断后即使后台已经攒好了下一步计划，
+    /// 脱险后 TryResumeFromBackBuffer() 也总是扑空，只能重新发一次网络请求干等回复，
+    /// 这段真实的网络延迟就是"发呆十几秒"的真正原因。
     /// </summary>
     public void InterruptAndClear(bool hardStopMovement = true)
     {
         Debug.LogWarning(hardStopMovement
-            ? "[小脑] 💥 收到本能急停指令！格式化所有前后台缓冲区，强制踩死物理刹车！"
-            : "[小脑] 🔔 收到软性重新思考指令，清空计划缓冲区，但保留身体正在进行的漫步。");
+            ? "[小脑] 💥 收到本能急停指令！终止当前正在执行的动作，强制踩死物理刹车！（排队中的后台计划予以保留）"
+            : "[小脑] 🔔 收到软性重新思考指令，清空当前前台计划，但保留身体正在进行的漫步。");
         frontBuffer.Clear();
-        backBuffer.Clear();
         isBusy = false;
 
         if (hardStopMovement)

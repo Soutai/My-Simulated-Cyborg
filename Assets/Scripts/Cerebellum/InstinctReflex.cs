@@ -198,8 +198,10 @@ public class InstinctReflex : MonoBehaviour
             var col = dangerOverlapBuffer[i];
             if (col.gameObject == this.gameObject) continue;
 
-            // 🌟 跳过 NPC 自己正主动接近的目标：这是我自己冲过去的，不是它冲过来的
-            if (actuator.CurrentApproachTarget != null && col.gameObject == actuator.CurrentApproachTarget) continue;
+            // 🌟 跳过 NPC 当前这整套大脑计划明确瞄准的交战目标：这是我自己选择要打/要接近的，
+            // 不是它自己贴上来的偷袭——覆盖 APPROACH 到 USE_ITEM 全程，不只是"正在走过去"那一步，
+            // 不然刚打完一棍子、对方一动就会被判定成"遭遇贴身威胁"强行打断本来正在赢的战斗。
+            if (actuator.CurrentEngagementTarget != null && col.gameObject == actuator.CurrentEngagementTarget) continue;
 
             SemanticObject semanticObj = col.GetComponent<SemanticObject>();
             if (semanticObj == null) continue;
