@@ -40,8 +40,10 @@ public class WanderReflex : MonoBehaviour
 
     // 🌟 排障诊断：定期打印速度/位移快照，用来判断"走得慢"到底是力度不够、频繁被判定受阻
     // 换方向、还是候选方向评分本身有问题——不猜，直接看数据。
-    private float diagnosticLogTimer = 0f;
-    private Vector3 lastLoggedPosition;
+    // 🌟 下面这两个字段只被 FixedUpdate 里注释掉的诊断日志块读取，暂时一并注释掉避免
+    // "赋值了但从未使用"的编译警告；需要重新启用诊断日志时，把这两行和下面的日志块一起取消注释即可。
+    // private float diagnosticLogTimer = 0f;
+    // private Vector3 lastLoggedPosition;
 
     void Awake()
     {
@@ -54,8 +56,8 @@ public class WanderReflex : MonoBehaviour
         IsWandering = true;
         directionTimer = 0f; // 立刻在这一帧挑一个新方向，不用等
         recentTrail.Clear();
-        diagnosticLogTimer = 0f;
-        lastLoggedPosition = transform.position;
+        // diagnosticLogTimer = 0f;
+        // lastLoggedPosition = transform.position;
         // Debug.Log("<color=#33CCCC>[漫步反射] 🚶 开始本地自主探索。</color>"); // 🌟 暂时注释，需要时取消注释即可
     }
 

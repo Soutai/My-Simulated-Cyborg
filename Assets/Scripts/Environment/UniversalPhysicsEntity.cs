@@ -71,6 +71,24 @@ public class UniversalPhysicsEntity : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// 🌟 供武器命中判定（CharacterActuator.PerformSweepAttack）直接调用：不依赖下一帧被动
+    /// 读取 rb.linearVelocity——那个读数容易在同一个物理帧内被目标身上其他脚本（比如
+    /// EnemyController 的追击限速，每帧都会把速度夹回 maxChaseSpeed 以内）抢先篡改，导致
+    /// 武器明明打中了，检测到的却是"已经被夹回正常范围"的速度，永远摸不到冲击阈值。
+    /// 命中的那一刻直接把这次冲击的等效速度（冲量 / 目标质量）同步传进来评估，跟 FixedUpdate
+    /// 里的检测走同一套阈值和伤害公式，只是不给任何时序竞争的机会。
+    /// </summary>
+    public void ReportDirectImpact(float impactSpeed)
+    {
+        if (isDepleted) return;
+
+        if (impactSpeed > physicsRule.impactThreshold)
+        {
+            EvaluatePhysicsImpact(impactSpeed * physicsRule.damageMultiplier);
+        }
+    }
+
     private void EvaluatePhysicsImpact(float computedForce)
     {
         if (computedForce <= 0f) return;

@@ -36,6 +36,15 @@ public static class PhysicsProtocolConfig
 
         // ---- Consume 专用 ----
         public float satietyRestore;    // 恢复的饱食度数值
+
+        // ---- 持续使用（不区分具体 kind，任何效果都可以选择要不要连续）----
+        // 🌟 2026-07-26 新增：USE_ITEM 原来只认"用一次"，导致每挥一下棍子都要走一次完整的
+        // 大脑网络往返才能挥第二下——"要不要打这一下"从来不是需要每次重新请示的战略决策，
+        // 一旦决定要打，"接着挥到分出结果"应该是纯粹的机械重复，不需要联网。是否连续完全由
+        // 物品自己的配置决定，执行器不针对"是不是武器"写 if-else。
+        public bool isContinuousUse;         // 触发一次后是否要在本地反复重复，直到分出结果/超时/够不着
+        public float continuousInterval;     // 每次重复之间的冷却
+        public float continuousMaxDuration;  // 安全超时上限，防止意外情况下无限循环下去
     }
 
     // 🌟 核心注册表：所有物体的物理抗性在这里集中配置，严禁散落到 Inspector 面板
@@ -44,7 +53,7 @@ public static class PhysicsProtocolConfig
         {
             {
                 SemanticType.Enemy, // 狼：躯体较脆弱，容易被木棍高速击退轰飞触发消亡
-                new PhysicsResistance { maxTolerance = 60f, impactThreshold = 12f, damageMultiplier = 2.5f, collisionDamageMultiplier = 1.5f }
+                new PhysicsResistance { maxTolerance = 100f, impactThreshold = 12f, damageMultiplier = 2.5f, collisionDamageMultiplier = 1.5f }
             },
             {
                 SemanticType.Food,  // 水果：极为脆弱，如果发生剧烈碰撞或被踩踏可能会坏掉
@@ -61,14 +70,17 @@ public static class PhysicsProtocolConfig
         new Dictionary<SemanticType, ItemUseEffect>()
         {
             {
-                SemanticType.Weapon, // 木棍：向前横扫，击退恶狼
+                SemanticType.Weapon, // 木棍：向前横扫，击退恶狼；持续使用，直到分出结果
                 new ItemUseEffect
                 {
                     kind = UseEffectKind.SweepAttack,
                     effectRadius = 2f,
                     forwardOffset = 1f,
                     knockbackForce = 30f,
-                    affectedTag = "Enemy"
+                    affectedTag = "Enemy",
+                    isContinuousUse = true,
+                    continuousInterval = 0.5f,
+                    continuousMaxDuration = 10f
                 }
             },
             {

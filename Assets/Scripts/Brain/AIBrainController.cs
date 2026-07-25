@@ -128,13 +128,18 @@ public class AIBrainController : MonoBehaviour
 
         currentGoal = decision.goal;
 
-        // 🌟 将大模型给出的锚点字符串解析成 SemanticType，无法识别（含 "None"）就视为无锚点
-        currentInterruptAnchor = ParseInterruptAnchor(decision.interrupt_anchor_type);
+        // 🌟 将大模型给出的锚点字符串解析成 SemanticType，无法识别（含 "None"）就视为无锚点。
+        // 🌟 注意：这里不再直接赋值给 currentInterruptAnchor——这个锚点属于"这份新计划"，
+        // 而这份新计划有可能因为身体正忙而被锁进 backBuffer 排队，不会立刻生效。如果这里
+        // 无条件覆盖，会把还在执行中的旧计划（通常是 EXPLORE）的锚点保护提前拆除，导致雷达
+        // 明明扫到了旧计划真正关心的目标，也再也不会触发"战略惊醒锚点"——锚点交给
+        // LocalMotorController.ReceiveBrainPlan 在这份计划真正开始执行的那一刻才生效。
+        SemanticType? parsedAnchor = ParseInterruptAnchor(decision.interrupt_anchor_type);
 
         // 🌟 纯净流：送入小脑双缓冲
         if (smallBrain != null && decision.plan_steps != null && decision.plan_steps.Count > 0)
         {
-            smallBrain.ReceiveBrainPlan(decision.plan_steps, currentGoal);
+            smallBrain.ReceiveBrainPlan(decision.plan_steps, currentGoal, parsedAnchor);
         }
 
         isThinking = false;
@@ -204,6 +209,16 @@ public class AIBrainController : MonoBehaviour
     public void RestoreGoal(string goal)
     {
         currentGoal = goal;
+    }
+
+    /// <summary>
+    /// 🌟 供 LocalMotorController 在"一份计划真正开始执行"的那一刻调用（不管是立刻执行还是
+    /// 排队后才被促进的 backBuffer 计划）——只有这时候这份计划的 interrupt_anchor_type 才该
+    /// 真正生效，覆盖掉之前那份计划（如果有）的锚点保护。
+    /// </summary>
+    public void SetInterruptAnchor(SemanticType? anchor)
+    {
+        currentInterruptAnchor = anchor;
     }
 
     /// <summary>

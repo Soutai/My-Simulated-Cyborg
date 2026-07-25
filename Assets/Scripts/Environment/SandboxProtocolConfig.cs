@@ -20,6 +20,11 @@ public class PhysicalInteractionConfig
 
     [Tooltip("GRAB 允许的最大抓取距离")]
     public float maxGraspDistance = 1.25f;
+
+    [Tooltip("战略惊醒锚点命中这个类型时，小脑能否跳过大脑裁决、本地反射直接上前拾取——" +
+        "只有'纯粹是执行已表态意图、不需要新判断'的可拾取资源类型才该是 true（如 Food/Weapon）；" +
+        "Enemy 这类'怎么应对需要临场判断'的类型必须是 false，交给大脑决定")]
+    public bool isReflexGraspable = false;
 }
 
 public static class SandboxProtocolConfig
@@ -31,19 +36,22 @@ public static class SandboxProtocolConfig
         {
             type = SemanticType.Food,
             desiredApproachDistance = 0.85f,
-            maxGraspDistance = 1.25f
+            maxGraspDistance = 1.25f,
+            isReflexGraspable = true
         },
         new PhysicalInteractionConfig
         {
             type = SemanticType.Weapon,
             desiredApproachDistance = 0.60f,
-            maxGraspDistance = 1.1f
+            maxGraspDistance = 1.1f,
+            isReflexGraspable = true
         },
         new PhysicalInteractionConfig
         {
             type = SemanticType.Enemy,
             desiredApproachDistance = 1.8f,
-            maxGraspDistance = 2.5f
+            maxGraspDistance = 2.5f,
+            isReflexGraspable = false
         }
     };
 

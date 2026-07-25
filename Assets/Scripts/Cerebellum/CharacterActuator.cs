@@ -15,6 +15,18 @@ public class CharacterActuator : MonoBehaviour
     [Tooltip("低于此水平速度不再更新朝向，防止静止时抖动")]
     public float minSpeedToUpdateFacing = 0.15f;
 
+    [Header("挥击动画")]
+    [Tooltip("绕手持物体本地哪根轴摆动——选错轴会变成棍子绕着自己的杆身自转，画面上几乎看不出在挥。" +
+        "比如棍子模型本身是沿本地 Y 轴竖直建模的，选 Y 轴摆动就相当于原地拧棍子；这种情况应该选 X 或 Z。" +
+        "可以在 Play 模式下直接改这个字段试，立刻能看到哪个轴才是真的\"挥出去\"的效果，不用改代码。")]
+    public Vector3 swingAxisLocal = Vector3.right;
+    [Tooltip("横向挥砍的摆动角度")]
+    public float swingAngle = 80f;
+    [Tooltip("挥出去用多久")]
+    public float swingOutDuration = 0.12f;
+    [Tooltip("收回来用多久，比挥出去慢一点看起来更自然")]
+    public float swingBackDuration = 0.18f;
+
     private Rigidbody rb;
 
     // 🌟 纯逻辑朝向：只记录数据供 USE_ITEM 挥击判定方向使用，不用物理旋转身体。
@@ -37,13 +49,25 @@ public class CharacterActuator : MonoBehaviour
     // 🌟 供视觉扇形等外部系统读取当前"正面"朝向，本质就是这具身体上一次的移动方向
     public Vector3 FacingDirection => facingDirection;
 
-    // 🌟 NPC 当前正在交战/追求的目标。由 LocalMotorController 在每次真正开始执行一份新的
-    // 前台计划时刷新（见 UpdateEngagementTargetFromPlan），覆盖 APPROACH→USE_ITEM 全程，
-    // 也覆盖两轮计划之间等待大脑网络回复的空窗期——只要大脑还没有换目标（或换成无目标的 EXPLORE），
-    // 就一直算"还在交战"，不会因为一小段 2 步计划刚好执行完就重新暴露给本能。
+    // 🌟 专注系统：NPC 当前正在交战/追求的目标。由 LocalMotorController 在每次真正开始执行
+    // 一份新的前台计划时刷新（见 UpdateFocusFromPlan），覆盖 APPROACH→USE_ITEM 全程，也覆盖
+    // 两轮计划之间等待大脑网络回复的空窗期——只要大脑还没有换目标（或换成无目标的 EXPLORE），
+    // 就一直算"还在专注这个目标"，不会因为一小段 2 步计划刚好执行完就重新暴露给本能。
     // 供本能反射系统甄别"这是我自己主动选择要打/要接近的目标"和"这是它自己冲过来的"，
     // 避免自己主动接近、甚至已经动手交战的目标，被误判成遭到偷袭而强行打断计划逃跑。
-    public GameObject CurrentEngagementTarget { get; private set; }
+    public GameObject CurrentFocusTarget { get; private set; }
+
+    // 🌟 这份专注是什么时候建立的，配合 InstinctProtocolConfig.FocusDecayTimeout 给专注设一个
+    // 有效期——不能让它无限期悬空生效（比如敌人卡在攻击距离外一点点打不中人，又刚好赶上网络
+    // 请求连续超时，"下一份计划开始执行"这个唯一的续期条件迟迟不会发生，NPC 会对贴脸的敌人
+    // 视而不见、僵持在原地不动）。专注只会因为这里的超时、或者大脑主动换目标而解除——
+    // 不会因为挨打就打断（见 UpdateFocusFromPlan 的说明）。
+    private float focusSetTime = -999f;
+
+    // 🌟 供 InstinctReflex 判断专注是否仍然有效——目标存在且没有超过有效期才算数，
+    // 过期后即使 CurrentFocusTarget 还没被清空，也不再豁免它的危险贡献。
+    public bool IsFocusActive =>
+        CurrentFocusTarget != null && (Time.time - focusSetTime) < InstinctProtocolConfig.FocusDecayTimeout;
 
     // 🌟 是否真正静止（水平速度低于朝向更新阈值）。只有这时候 UpdateFacingDirection 才不会
     // 每帧覆盖朝向，HearingReflex 之类的本能转向系统才能安全地直接设置 facingDirection，
@@ -76,9 +100,26 @@ public class CharacterActuator : MonoBehaviour
     /// <summary>
     /// 🌟 只更新逻辑朝向，不触碰刚体旋转。USE_ITEM 挥击判定用这个方向而非 transform.forward，
     /// 这样身体一直是"哪边走得多就代表朝哪边"，不需要真的转动物理刚体。
+    ///
+    /// 🌟 有专注目标时例外：朝向直接锁定目标方向，不再跟随移动速度。贴身近战时两个刚体
+    /// 互相挤压/分离经常会产生瞬间的反弹速度，这部分"非自愿"的速度如果也被当成"我要转向
+    /// 这边"的信号，会导致 NPC 明明还在交战，却因为一次物理碰撞的瞬间反弹就"转身背对敌人"，
+    /// 看起来像是撞了一下就不打了。专注状态下朝向的语义就是"我一直盯着这个目标"，不该被
+    /// 物理噪声打断。
     /// </summary>
     private void UpdateFacingDirection()
     {
+        if (CurrentFocusTarget != null)
+        {
+            Vector3 toTarget = CurrentFocusTarget.transform.position - transform.position;
+            toTarget.y = 0f;
+            if (toTarget.sqrMagnitude > 0.0001f)
+            {
+                facingDirection = toTarget.normalized;
+                return;
+            }
+        }
+
         Vector3 horizontalVelocity = new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z);
         if (horizontalVelocity.magnitude < minSpeedToUpdateFacing) return;
 
@@ -101,7 +142,7 @@ public class CharacterActuator : MonoBehaviour
         StopAllCoroutines();
         rb.linearVelocity = Vector3.zero;
         isExecuting = false;
-        CurrentEngagementTarget = null; // 协程被强制打断，不会走到 SequenceRoutine 自己收尾的清理代码，这里补上
+        CurrentFocusTarget = null; // 协程被强制打断，不会走到 SequenceRoutine 自己收尾的清理代码，这里补上
         CurrentActionDescription = "";
         remainingQueuedSteps.Clear();
         // 确保被中断时也能通知小脑解锁
@@ -165,16 +206,15 @@ public class CharacterActuator : MonoBehaviour
                     break;
 
                 case "USE_ITEM":
-                    TriggerUseLogic(TargetHand);
-                    yield return new WaitForSeconds(0.4f);
+                    yield return StartCoroutine(UseItemRoutine(TargetHand));
                     break;
             }
             StabilizeMovement();
         }
         isExecuting = false;
         CurrentActionDescription = "";
-        // 🌟 这里不再顺手清空 CurrentEngagementTarget——是否还在交战由下一份即将执行的计划决定
-        // （见 UpdateEngagementTargetFromPlan），不能因为这一小段 2 步计划恰好跑完了，就在等待
+        // 🌟 这里不再顺手清空 CurrentFocusTarget——专注解不解除由下一份即将执行的计划决定
+        // （见 UpdateFocusFromPlan），不能因为这一小段 2 步计划恰好跑完了，就在等待
         // 大脑下一轮网络回复的空窗期里让刚打过的目标突然重新暴露成"贴身威胁"。
         // 🌟 核心修复：全套动作做完了，通知小脑解开 busy 锁
         OnSequenceFinished?.Invoke();
@@ -183,15 +223,27 @@ public class CharacterActuator : MonoBehaviour
     /// <summary>
     /// 🌟 供 LocalMotorController 在每次真正开始执行一份新的前台计划前调用（无论接下来走
     /// EXPLORE 还是具体原语序列）：扫描计划里第一个点名了 target_id 的步骤（通常是 APPROACH），
-    /// 解析成真正的 GameObject 作为"当前交战目标"；没有任何步骤带 target_id（比如 EXPLORE、
+    /// 解析成真正的 GameObject 作为"当前专注目标"；没有任何步骤带 target_id（比如 EXPLORE、
     /// 纯 MOVE_DIRECTION）就清空为 null，代表大脑已经不再针对某个具体物体行动。
+    ///
+    /// 🌟 专注只由这里（换目标/换成无目标）和 FocusDecayTimeout 超时两条规则解除——挨打不会
+    /// 打断专注。大脑目标是交战时就该打到分出结果，不会因为对方还手了一下就本能性地弃战逃跑。
     /// </summary>
-    public void UpdateEngagementTargetFromPlan(List<PlanStep> commands)
+    public void UpdateFocusFromPlan(List<PlanStep> commands)
     {
-        CurrentEngagementTarget = ResolveEngagementTarget(commands);
+        CurrentFocusTarget = ResolveFocusTarget(commands);
+        focusSetTime = Time.time; // 每次有新计划真正开始执行，专注有效期就重新起算
+
+        // 🌟 排障诊断：专注系统这套跨多个组件的时序（脱险→接续 backBuffer→刷新专注→开始执行）
+        // 只靠读代码很难确认"这一刻专注到底有没有真的生效"，直接打日志比推演时序快得多。
+        Debug.Log($"<color=#8888FF>[专注系统] 🎯 专注目标刷新为: {(CurrentFocusTarget != null ? CurrentFocusTarget.name : "无")}</color>");
     }
 
-    private GameObject ResolveEngagementTarget(List<PlanStep> commands)
+    /// <summary>
+    /// 🌟 公开出来单纯给 LocalMotorController 只读探测用（比如"排队中的 backBuffer 计划点名的
+    /// 是谁"），不会顺带修改 CurrentFocusTarget——那个字段只应该反映"真正在执行"的计划。
+    /// </summary>
+    public GameObject ResolveFocusTarget(List<PlanStep> commands)
     {
         foreach (var cmd in commands)
         {
@@ -200,6 +252,24 @@ public class CharacterActuator : MonoBehaviour
             if (resolved != null) return resolved;
         }
         return null;
+    }
+
+    /// <summary>
+    /// 🌟 两个物体之间真正"贴近程度"的判断：用目标碰撞体表面最近点的距离，而不是两个
+    /// Transform 原点之间的直线距离。细长/pivot 不在几何中心的物体（手持武器一类的道具经常
+    /// 把 pivot 放在末端，方便贴到手上）用直线距离判断"够不够近"会有系统性偏差——身体明明
+    /// 已经贴到物体表面了，两个 pivot 之间的距离读数依然很大，导致配置的停止线/抓取距离
+    /// 永远摸不到、物理上却已经顶到头了（表现成 ApproachTargetRoutine 里的"检测到物理地形
+    /// 死锁"，以及 GRAB 反复因为"距离过远"失败）。目标没有 Collider 时退化回原来的直线距离，
+    /// 不引入新的失败模式。
+    /// </summary>
+    private float GetSurfaceDistance(GameObject target)
+    {
+        Collider targetCollider = target.GetComponent<Collider>();
+        if (targetCollider == null) return Vector3.Distance(transform.position, target.transform.position);
+
+        Vector3 closestPoint = targetCollider.ClosestPoint(transform.position);
+        return Vector3.Distance(transform.position, closestPoint);
     }
 
     private IEnumerator ApproachTargetRoutine(string targetId, float strength = 1f)
@@ -230,7 +300,7 @@ public class CharacterActuator : MonoBehaviour
 
         while (timer < maxTime && isExecuting && target != null)
         {
-            float currentDistance = Vector3.Distance(transform.position, target.transform.position);
+            float currentDistance = GetSurfaceDistance(target);
             float distanceToGap = currentDistance - desiredDistance;
             float currentSpeed = rb.linearVelocity.magnitude;
 
@@ -316,7 +386,7 @@ public class CharacterActuator : MonoBehaviour
 
         if (timer >= maxTime)
         {
-            float finalDist = Vector3.Distance(transform.position, target.transform.position);
+            float finalDist = GetSurfaceDistance(target);
             Debug.LogWarning($"<color=red>[APPROACH] ⚠️ 达到 {maxTime}s 安全帽强制结束 → {targetId}，最终距离: {finalDist:F2}m</color>");
         }
         else
@@ -384,7 +454,14 @@ public class CharacterActuator : MonoBehaviour
         rb.linearVelocity = vel;
     }
 
-    private void TriggerUseLogic(string hand)
+    /// <summary>
+    /// 🌟 USE_ITEM 的执行入口。是否要在本地反复重复完全由物品自己的配置
+    /// （PhysicsProtocolConfig.ItemUseEffect.isContinuousUse）决定，这里不针对"是不是武器"
+    /// 写 if-else——不连续的效果（比如吃东西）行为跟以前完全一样，触发一次就结束；
+    /// 连续的效果（比如挥棍子）按配置的节奏反复触发，直到分出结果、目标够不着、或者超时，
+    /// 期间不需要大脑每挥一下都重新决策一次。
+    /// </summary>
+    private IEnumerator UseItemRoutine(string hand)
     {
         string sanitizedHand = (hand ?? "").ToUpper().Trim();
         GameObject activeObject = (sanitizedHand == "LEFT") ? leftHandObject : rightHandObject;
@@ -392,13 +469,45 @@ public class CharacterActuator : MonoBehaviour
         if (activeObject == null)
         {
             Debug.LogWarning($"[USE_ITEM] 失败：【{sanitizedHand}手】空无一物，必须先 GRAB 才能使用");
-            return;
+            yield break;
         }
 
         SemanticObject semantic = activeObject.GetComponent<SemanticObject>();
-        if (semantic == null) return;
+        if (semantic == null) yield break;
 
-        ApplyUseEffect(PhysicsProtocolConfig.GetUseEffect(semantic.semanticType), activeObject, sanitizedHand);
+        PhysicsProtocolConfig.ItemUseEffect effect = PhysicsProtocolConfig.GetUseEffect(semantic.semanticType);
+
+        if (!effect.isContinuousUse)
+        {
+            ApplyUseEffect(effect, activeObject, sanitizedHand);
+            yield return new WaitForSeconds(0.4f);
+            yield break;
+        }
+
+        float elapsed = 0f;
+        while (elapsed < effect.continuousMaxDuration && isExecuting)
+        {
+            // 🌟 每一轮都重新确认——物品可能中途被松开，专注目标可能已经消失（打死了）
+            // 或者跑出了判定范围（够不着了，交回给大脑基于最新处境重新规划）。
+            activeObject = (sanitizedHand == "LEFT") ? leftHandObject : rightHandObject;
+            if (activeObject == null) yield break;
+
+            GameObject target = CurrentFocusTarget;
+            if (target == null || !target.activeInHierarchy) yield break;
+
+            if (GetSurfaceDistance(target) > effect.effectRadius) yield break;
+
+            ApplyUseEffect(effect, activeObject, sanitizedHand);
+
+            float waitTimer = effect.continuousInterval;
+            while (waitTimer > 0f)
+            {
+                if (!isExecuting) yield break;
+                waitTimer -= Time.deltaTime;
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+        }
     }
 
     /// <summary>
@@ -411,7 +520,8 @@ public class CharacterActuator : MonoBehaviour
         {
             case PhysicsProtocolConfig.UseEffectKind.SweepAttack:
                 Debug.Log($"<color=yellow>[物理交互] 原始人挥舞了【{hand}手】的{target.name}！</color>");
-                PerformSweepAttack(effect, facingDirection);
+                PerformSweepAttack(effect, ResolveAttackDirection());
+                StartCoroutine(SwingAnimationRoutine(target));
                 break;
 
             case PhysicsProtocolConfig.UseEffectKind.Consume:
@@ -431,19 +541,103 @@ public class CharacterActuator : MonoBehaviour
     }
 
     /// <summary>
+    /// 🌟 挥击方向优先瞄准当前专注目标（我正在交战的对象），不用 facingDirection——APPROACH
+    /// 停下来的那一刻，身体朝向只是"刚才走路走出来的方向"的副产品，不保证正对着一个会动的目标
+    /// （尤其目标本身在靠近/游荡时更容易对不上），会导致横扫判定球心偏离目标实际位置、白挥一下。
+    /// 没有专注目标时（比如本能反射的赤手反击，没有明确交战对象）才退回 facingDirection。
+    /// </summary>
+    private Vector3 ResolveAttackDirection()
+    {
+        if (CurrentFocusTarget != null)
+        {
+            Vector3 toTarget = CurrentFocusTarget.transform.position - transform.position;
+            toTarget.y = 0f;
+            if (toTarget.sqrMagnitude > 0.0001f) return toTarget.normalized;
+        }
+        return facingDirection;
+    }
+
+    /// <summary>
+    /// 🌟 纯视觉层的挥砍动画：只旋转手持物体自己的 localRotation，不碰判定逻辑——
+    /// PerformSweepAttack 的命中判定依然是瞬间的 OverlapSphere，这里只是让"挥了一下"这件事
+    /// 在画面上真正看得见，而不是棍子一动不动地举在手上。GRAB 时物体的静止姿态是
+    /// localRotation = identity，挥完会自动收回这个姿态，不会打飞角度。
+    /// </summary>
+    private IEnumerator SwingAnimationRoutine(GameObject item)
+    {
+        if (item == null) yield break;
+
+        Quaternion restRotation = item.transform.localRotation;
+        Quaternion swungRotation = restRotation * Quaternion.AngleAxis(swingAngle, swingAxisLocal);
+
+        float t = 0f;
+        while (t < swingOutDuration)
+        {
+            if (item == null) yield break; // 挥砍过程中物体可能被松开/摧毁
+            t += Time.deltaTime;
+            item.transform.localRotation = Quaternion.Slerp(restRotation, swungRotation, t / swingOutDuration);
+            yield return null;
+        }
+
+        t = 0f;
+        while (t < swingBackDuration)
+        {
+            if (item == null) yield break;
+            t += Time.deltaTime;
+            item.transform.localRotation = Quaternion.Slerp(swungRotation, restRotation, t / swingBackDuration);
+            yield return null;
+        }
+
+        item.transform.localRotation = restRotation;
+    }
+
+    /// <summary>
     /// 横扫判定的共享实现：只认方向参数，不管这个方向是精确朝向（正常 USE_ITEM）
     /// 还是带随机抖动的乱挥方向（本能反射的惊跳反应）。
     /// </summary>
     private void PerformSweepAttack(PhysicsProtocolConfig.ItemUseEffect effect, Vector3 direction)
     {
-        Collider[] hits = Physics.OverlapSphere(transform.position + direction * effect.forwardOffset, effect.effectRadius);
+        Vector3 sphereCenter = transform.position + direction * effect.forwardOffset;
+        Collider[] hits = Physics.OverlapSphere(sphereCenter, effect.effectRadius);
+
+        bool hitAnyTaggedTarget = false;
         foreach (var h in hits)
         {
             if (h.CompareTag(effect.affectedTag))
             {
+                hitAnyTaggedTarget = true;
                 Rigidbody targetRb = h.GetComponent<Rigidbody>();
                 if (targetRb)
+                {
                     targetRb.AddForce((h.transform.position - transform.position).normalized * effect.knockbackForce, ForceMode.Impulse);
+
+                    // 🌟 直接同步上报这次冲击的等效速度（冲量 / 目标质量），不等下一帧再被动
+                    // 读取 rb.linearVelocity——目标身上如果还有别的脚本在同一物理帧内改它的
+                    // 速度（比如敌人的追击限速），被动读取会被"抢跑"，导致明明打中了却检测
+                    // 不到冲击，见 UniversalPhysicsEntity.ReportDirectImpact 的说明。
+                    UniversalPhysicsEntity physicsEntity = h.GetComponent<UniversalPhysicsEntity>();
+                    if (physicsEntity != null)
+                    {
+                        float impactSpeed = effect.knockbackForce / targetRb.mass;
+                        physicsEntity.ReportDirectImpact(impactSpeed);
+                    }
+                }
+            }
+        }
+
+        // 🌟 排障诊断：命中判定失败时直接说清楚是"判定球范围内空无一物"还是"扫到了东西但
+        // Tag 不对"，不用再靠猜——两种失败原因对应完全不同的排查方向（前者是方位/距离问题，
+        // 后者是预制体 Tag/Collider 挂载层级配置问题）。
+        if (!hitAnyTaggedTarget)
+        {
+            if (hits.Length == 0)
+            {
+                Debug.Log($"<color=#FF8800>[物理交互诊断] 🔍 横扫判定球范围内没有扫到任何碰撞体（球心: {sphereCenter:F2}，半径: {effect.effectRadius:F2}）</color>");
+            }
+            else
+            {
+                string hitList = string.Join(", ", System.Array.ConvertAll(hits, h => $"{h.gameObject.name}(Tag={h.tag})"));
+                Debug.Log($"<color=#FF8800>[物理交互诊断] 🔍 横扫判定球扫到了 {hits.Length} 个碰撞体，但没有一个 Tag 是 \"{effect.affectedTag}\"：{hitList}</color>");
             }
         }
     }
@@ -527,7 +721,7 @@ public class CharacterActuator : MonoBehaviour
 
         if (target != null)
         {
-            float currentDist = Vector3.Distance(transform.position, target.transform.position);
+            float currentDist = GetSurfaceDistance(target);
 
             float maxGraspDistance = 1.25f;
             var semantic = target.GetComponent<SemanticObject>();
@@ -586,7 +780,7 @@ public class CharacterActuator : MonoBehaviour
         {
             if (semantic == null) continue;
 
-            float dist = Vector3.Distance(transform.position, semantic.transform.position);
+            float dist = GetSurfaceDistance(semantic.gameObject);
             if (dist <= semantic.GetMaxGraspDistance() && dist < nearestDist)
             {
                 nearestDist = dist;

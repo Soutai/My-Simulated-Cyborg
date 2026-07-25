@@ -23,7 +23,14 @@ public class SemanticObject : MonoBehaviour
         WorldObjectRegistry.Register(this);
     }
 
-    void OnDestroy()
+    // 🌟 用 OnDisable 而不是 OnDestroy：这个项目里物体"消亡"的唯一方式是
+    // UniversalPhysicsEntity 耗尽耐受度后 gameObject.SetActive(false)，只会触发 OnDisable，
+    // 不会触发 OnDestroy——挂在 OnDestroy 上的注销逻辑在这个项目里从未真正生效过，导致死掉的
+    // 物体永远滞留在 WorldObjectRegistry 里，大脑还能凭记忆点名一个早就不存在的目标，
+    // APPROACH 对着一个碰撞体已禁用的对象算距离也会得到不可靠的结果（比如读到 0 米，
+    // 误判"瞬间到达"）。OnDisable 会在真正 Destroy 之前也被调用一次，所以这一处改动
+    // 同时覆盖"被禁用"和"被销毁"两种消失方式，不需要两处都写。
+    void OnDisable()
     {
         WorldObjectRegistry.Unregister(this);
     }

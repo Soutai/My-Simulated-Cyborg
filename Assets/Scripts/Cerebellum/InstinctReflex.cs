@@ -34,6 +34,7 @@ public class InstinctReflex : MonoBehaviour
     private LocalMotorController smallBrain;
     private AIBrainController brain;
     private WanderReflex wanderReflex;
+    private NPCAttributes attributes;
 
     // 🌟 供外部（LocalMotorController）判断"身体现在是不是被本能反射占用"，
     // 占用期间大脑新下发的计划一律锁进后台缓冲区，不能抢过来打断本能。
@@ -57,6 +58,7 @@ public class InstinctReflex : MonoBehaviour
         smallBrain = GetComponent<LocalMotorController>();
         brain = GetComponent<AIBrainController>();
         wanderReflex = GetComponent<WanderReflex>();
+        attributes = GetComponent<NPCAttributes>();
     }
 
     void FixedUpdate()
@@ -198,10 +200,17 @@ public class InstinctReflex : MonoBehaviour
             var col = dangerOverlapBuffer[i];
             if (col.gameObject == this.gameObject) continue;
 
-            // 🌟 跳过 NPC 当前这整套大脑计划明确瞄准的交战目标：这是我自己选择要打/要接近的，
-            // 不是它自己贴上来的偷袭——覆盖 APPROACH 到 USE_ITEM 全程，不只是"正在走过去"那一步，
-            // 不然刚打完一棍子、对方一动就会被判定成"遭遇贴身威胁"强行打断本来正在赢的战斗。
-            if (actuator.CurrentEngagementTarget != null && col.gameObject == actuator.CurrentEngagementTarget) continue;
+            // 🌟 生命值安全阀：不管专注还剩多久、目标换没换，只要自己快没命了就不再豁免任何目标，
+            // 把完整的危险感知交还本能——纯生存兜底，不看伤害轻重、不看战局，只看这一件事。
+            bool isHealthCritical = attributes != null && (attributes.Health / NPCAttributes.MaxHealth) < InstinctProtocolConfig.CriticalHealthRatio;
+
+            // 🌟 跳过 NPC 当前专注的目标（LocalMotorController.CurrentFocusTarget 已经把"正在
+            // 执行的专注"和"排队中还没轮到执行的专注"合并成一个统一读取入口）：这是我自己选择
+            // 要打/要接近的，不是它自己贴上来的偷袭——覆盖 APPROACH 到 USE_ITEM 全程，也覆盖大脑
+            // 已经点名但还没排到执行的排队计划，不然刚打完一棍子、或者计划还在排队时对方一动，
+            // 就会被判定成"遭遇贴身威胁"强行打断。专注本身有有效期（超时自然淡去）、也会随大脑
+            // 换目标而更新，但不会因为挨打就被打断——目标是交战就该打到分出结果，除非命都快没了。
+            if (!isHealthCritical && smallBrain != null && smallBrain.CurrentFocusTarget != null && col.gameObject == smallBrain.CurrentFocusTarget) continue;
 
             SemanticObject semanticObj = col.GetComponent<SemanticObject>();
             if (semanticObj == null) continue;

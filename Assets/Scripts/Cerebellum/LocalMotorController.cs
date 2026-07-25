@@ -23,9 +23,25 @@ public class LocalMotorController : MonoBehaviour
     private List<PlanStep> frontBuffer = new List<PlanStep>();
     private List<PlanStep> backBuffer = new List<PlanStep>();
 
+    // 🌟 排队中、还没轮到执行的 backBuffer 计划点名的是谁——大脑一旦点名了某个目标，从这一刻起
+    // 它就该免于被判定成偷袭威胁，不用等身体真正腾出手开始执行这份计划才生效，否则会出现
+    // "决定要打却在排队等待期间被本能抢先打断"的矛盾。用计算属性直接从 backBuffer 当前内容
+    // 现算，backBuffer 一旦被消费/清空这个属性就自然同步归位，不需要另外维护一份状态。
+    private GameObject QueuedFocusTarget => backBuffer.Count > 0 ? actuator.ResolveFocusTarget(backBuffer) : null;
+
+    // 🌟 专注系统的唯一读取入口：把 CharacterActuator 正在执行的专注目标和这里排队中的专注目标
+    // 合并成一个统一视角——InstinctReflex 只需要查这一个属性、判断一次，不用像以前那样分别问
+    // 两个组件、写两次 continue。优先级：正在真正执行的专注 > 还在排队、尚未开始的专注。
+    public GameObject CurrentFocusTarget => actuator.IsFocusActive ? actuator.CurrentFocusTarget : QueuedFocusTarget;
+
     // 🌟 后台缓冲区计划对应的目标文本——万一之后是"无声接续"（不经过一次新的大脑回复）恢复执行，
     // 用这个把 AIBrainController.currentGoal 正确还原，不然 UI 上会一直显示"无"跟实际行为对不上
     private string backBufferGoal = "";
+
+    // 🌟 后台缓冲区计划对应的战略惊醒锚点——同样要等这份计划真正促进为前台计划时才生效
+    // （见 AIBrainController.SetInterruptAnchor），不能在计划刚被接收、还在排队时就提前套用，
+    // 否则会把此刻仍在执行的上一份计划（通常是 EXPLORE）的锚点保护提前拆掉。
+    private SemanticType? backBufferAnchor = null;
 
     // 🌟 复用缓冲区，避免每帧 OverlapSphere 产生 GC 分配
     private readonly Collider[] anchorOverlapBuffer = new Collider[32];
@@ -64,29 +80,47 @@ public class LocalMotorController : MonoBehaviour
         {
             SemanticType anchor = brain.CurrentInterruptAnchor.Value;
 
-            // 借助雷达检测当前感知列表内是否有任何物体的语义类型与大脑下发的锚点一致
-            if (CheckRadarForAnchor(anchor))
+            // 借助雷达检测当前感知范围内是否有物体的语义类型与大脑下发的锚点一致，
+            // 有多个同时满足就取最近的那个
+            if (TryFindNearestAnchorMatch(anchor, out GameObject matchedTarget))
             {
                 Debug.Log($"<color=#00FFFF>[小脑感官唤醒] 👁️ 警报！雷达扫描到与长任务终极锚点一致的类型【{anchor}】！</color>");
-                Debug.Log("<color=#00FFFF>[小脑感官唤醒] 🔔 叫醒大脑重新决策——不是危险，先不打断身体正在进行的漫步。</color>");
 
-                // 🌟 软性打断：只是发现了值得重新思考的东西，不是紧急情况，不强行停下身体——
-                // 身体会继续漫步，直到大脑真的给出新指令为止，避免网络请求这段真实延迟期间站着发呆。
-                // brain.InterruptAndClearGoal() 内部会调用 smallBrain.InterruptAndClear()，这里不需要重复调用
-                brain.InterruptAndClearGoal(hardStopMovement: false);
+                // 🌟 可拾取资源（Food/Weapon，见 SandboxProtocolConfig.isReflexGraspable）不需要
+                // 大脑重新裁决"要不要去捡"——大脑设这个锚点的时候已经表过态了（"看到就告诉我"），
+                // 这里纯粹是执行已表态的意图，不是新决策，本地直接上前拾取，省掉一整轮网络延迟。
+                // 双手都占用时"要不要换手里的东西"才是真正的高级决策，那种情况仍然交给大脑判断。
+                if (SandboxProtocolConfig.GetInteractionConfig(anchor).isReflexGraspable && TryGetFreeHand(out string freeHand))
+                {
+                    Debug.Log($"<color=#00FFFF>[小脑感官唤醒] 🖐️ 可拾取资源，本地反射直接接管上前拾取（{freeHand}手），不等大脑裁决。</color>");
+                    BeginReflexFetch(matchedTarget, freeHand);
+                }
+                else
+                {
+                    Debug.Log("<color=#00FFFF>[小脑感官唤醒] 🔔 叫醒大脑重新决策——不是危险，先不打断身体正在进行的漫步。</color>");
 
-                // 立刻强制大脑联网重新思考。此时雷达数据里已经有目标了，大脑会下达精准单步连招
-                brain.RequestImmediateThink();
+                    // 🌟 软性打断：只是发现了值得重新思考的东西，不是紧急情况，不强行停下身体——
+                    // 身体会继续漫步，直到大脑真的给出新指令为止，避免网络请求这段真实延迟期间站着发呆。
+                    // brain.InterruptAndClearGoal() 内部会调用 smallBrain.InterruptAndClear()，这里不需要重复调用
+                    brain.InterruptAndClearGoal(hardStopMovement: false);
+
+                    // 立刻强制大脑联网重新思考。此时雷达数据里已经有目标了，大脑会下达精准单步连招
+                    brain.RequestImmediateThink();
+                }
             }
         }
     }
 
     /// <summary>
-    /// 💡 纯语义的雷达数据比对函数（完全复用且通用，不掺杂任何特定逻辑）
+    /// 💡 纯语义的雷达数据比对函数（完全复用且通用，不掺杂任何特定逻辑）：
+    /// 感知范围内跟锚点类型一致的物体里，取离自己最近的一个。
     /// </summary>
-    private bool CheckRadarForAnchor(SemanticType anchorType)
+    private bool TryFindNearestAnchorMatch(SemanticType anchorType, out GameObject matched)
     {
+        matched = null;
         if (radar == null) return false;
+
+        float nearestDistanceSqr = float.MaxValue;
 
         // 🌟 利用 Unity 的 Physics 探测当前感知半径内的物体（复用缓冲区，避免 GC 分配）
         int hitCount = Physics.OverlapSphereNonAlloc(transform.position, radar.perceptionRadius, anchorOverlapBuffer);
@@ -97,18 +131,56 @@ public class LocalMotorController : MonoBehaviour
 
             // 获取物体的通用语义标签组件，直接按枚举比对，不再走字符串
             SemanticObject semanticObj = col.GetComponent<SemanticObject>();
-            if (semanticObj != null && semanticObj.semanticType == anchorType)
+            if (semanticObj == null || semanticObj.semanticType != anchorType) continue;
+
+            float distanceSqr = (col.transform.position - transform.position).sqrMagnitude;
+            if (distanceSqr < nearestDistanceSqr)
             {
-                return true; // 只要雷达里进来了任何一个对得上号的类型，判定成功
+                nearestDistanceSqr = distanceSqr;
+                matched = col.gameObject;
             }
         }
+
+        return matched != null;
+    }
+
+    /// <summary>
+    /// 哪只手是空的——两只手都空优先用右手（跟 GRAB 默认手保持一致）。
+    /// </summary>
+    private bool TryGetFreeHand(out string hand)
+    {
+        if (actuator.RightHandObject == null) { hand = "Right"; return true; }
+        if (actuator.LeftHandObject == null) { hand = "Left"; return true; }
+        hand = null;
         return false;
+    }
+
+    /// <summary>
+    /// 🌟 命中的锚点是可拾取资源、且有空手时，本地反射直接接管：合成一份只有 APPROACH+GRAB
+    /// 两步的"伪计划"，喂进跟大脑下发计划完全相同的执行管线（ExecuteFrontBuffer）——
+    /// 借此白嫖现成的本能优先打断、专注系统豁免、序列做完自动叫醒大脑、
+    /// 目标中途消失时的容错等机制，不需要再单独写一套中断/恢复/异常处理逻辑。
+    /// </summary>
+    private void BeginReflexFetch(GameObject target, string hand)
+    {
+        brain.InterruptAndClearGoal(hardStopMovement: false); // 清空锚点，避免下一帧对同一个目标重复触发
+
+        List<PlanStep> fetchPlan = new List<PlanStep>
+        {
+            new PlanStep { description = "本地反射：就近拾取感知到的资源", arrival_op = "APPROACH", target_id = target.name },
+            new PlanStep { description = "本地反射：抓取到手", arrival_op = "GRAB", hand = hand, target_id = target.name }
+        };
+
+        // Debug.Log($"<color=#33CCCC>[本地拾取反射] 🖐️ 开始就近拾取 {target.name}（{hand}手）。</color>"); // 🌟 暂时注释，需要时取消注释即可
+
+        frontBuffer = fetchPlan;
+        ExecuteFrontBuffer();
     }
 
     /// <summary>
     /// 🧠 大脑唯一调用的连招计划接入口
     /// </summary>
-    public void ReceiveBrainPlan(List<PlanStep> planSteps, string brainGoal)
+    public void ReceiveBrainPlan(List<PlanStep> planSteps, string brainGoal, SemanticType? anchor)
     {
         if (planSteps == null || planSteps.Count == 0) return;
 
@@ -125,6 +197,7 @@ public class LocalMotorController : MonoBehaviour
         {
             Debug.Log($"<color=cyan>[小脑] 🟢 身体空闲，拉起前台缓冲区直接执行。目标: {brainGoal}</color>");
             frontBuffer = incomingCommands;
+            brain.SetInterruptAnchor(anchor); // 这份计划马上就要开始执行，锚点立刻生效
             ExecuteFrontBuffer();
         }
         else
@@ -133,6 +206,7 @@ public class LocalMotorController : MonoBehaviour
             Debug.Log($"<color=orange>[小脑] 💾 {reason}，新指令无缝锁入后台缓冲区(Back Buffer)。目标: {brainGoal}</color>");
             backBuffer = incomingCommands;
             backBufferGoal = brainGoal;
+            backBufferAnchor = anchor; // 暂存，等这份计划真正促进为前台计划时才生效——不能提前覆盖当前正在执行的计划的锚点保护
         }
     }
 
@@ -142,11 +216,11 @@ public class LocalMotorController : MonoBehaviour
 
         isBusy = true;
 
-        // 🌟 在真正开始执行这份计划之前，统一刷新"当前交战目标"——不管接下来走的是 EXPLORE
-        // 还是具体原语序列都要刷新。目标没变（比如连续两轮都在打同一只狼）就无缝续上豁免，
+        // 🌟 在真正开始执行这份计划之前，统一刷新"当前专注目标"——不管接下来走的是 EXPLORE
+        // 还是具体原语序列都要刷新。目标没变（比如连续两轮都在打同一只狼）就无缝续上专注，
         // 目标变了或者这份计划根本没有 target_id（比如 EXPLORE）就正确清空，不会让本能反射
         // 误把"上一份计划已经打完但还没等到下一份计划"的空窗期当成新的贴身威胁。
-        actuator.UpdateEngagementTargetFromPlan(frontBuffer);
+        actuator.UpdateFocusFromPlan(frontBuffer);
 
         // 🌟 EXPLORE 是开放式的本地漫步，不是一个"做完就结束"的定长原语，不走 CharacterActuator
         // 的原语序列——交给 WanderReflex 持续接管，直到锚点唤醒或本能反射把控制权抢回去为止。
@@ -184,6 +258,7 @@ public class LocalMotorController : MonoBehaviour
         {
             Debug.Log($"<color=lime>[小脑] ⚡ 零延迟无缝切换！将后台缓冲区(Back Buffer)激活推进！</color>");
             brain?.RestoreGoal(backBufferGoal); // 这条路径没有经过大脑的新回复，得手动把目标文本还原
+            brain?.SetInterruptAnchor(backBufferAnchor); // 这份计划现在才真正开始执行，锚点这时候才生效
             frontBuffer = new List<PlanStep>(backBuffer);
             backBuffer.Clear();
 
@@ -212,6 +287,7 @@ public class LocalMotorController : MonoBehaviour
         {
             Debug.Log("<color=lime>[小脑] ⚡ 本能反射已解除，接续执行期间攒下的后台缓冲区(Back Buffer)！</color>");
             brain?.RestoreGoal(backBufferGoal); // 这条路径没有经过大脑的新回复，得手动把目标文本还原
+            brain?.SetInterruptAnchor(backBufferAnchor); // 这份计划现在才真正开始执行，锚点这时候才生效
             frontBuffer = new List<PlanStep>(backBuffer);
             backBuffer.Clear();
             ExecuteFrontBuffer();
